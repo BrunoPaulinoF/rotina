@@ -42,6 +42,7 @@ const num = (v, d, min, max) => {
   return Math.min(max, Math.max(min, n));
 };
 const COLOR_RE = /^#[0-9a-fA-F]{6}$/;
+const FLOAT_POSITIONS = ['top-center', 'bottom-center', 'top-left', 'top-right', 'bottom-left', 'bottom-right'];
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 function slug(text) {
@@ -167,8 +168,7 @@ function normalizeConfig(input) {
       },
       floating: {
         enabled: bool(sf.enabled, df.enabled),
-        alwaysOnTop: bool(sf.alwaysOnTop, df.alwaysOnTop),
-        fixedTop: bool(sf.fixedTop, df.fixedTop),
+        position: FLOAT_POSITIONS.includes(sf.position) ? sf.position : df.position,
         opacity: num(sf.opacity, df.opacity, 0.4, 1)
       },
       general: {
@@ -196,4 +196,4 @@ function normalizeState(input) {
   };
 }
 
-module.exports = { JsonStore, normalizeConfig, normalizeState, slug };
+module.exports = { JsonStore, normalizeConfig, normalizeState, slug, FLOAT_POSITIONS };

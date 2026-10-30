@@ -574,9 +574,8 @@
       row('Iniciar com o Windows', info.packaged ? 'Abre minimizado na bandeja ao ligar o computador.' : 'Disponível na versão instalada (em modo de desenvolvimento não é registrado).', sw('data-g="startWithWindows"', g.startWithWindows)) +
       row('Ao fechar a janela, continuar na bandeja', 'Os alertas continuam funcionando. Para encerrar, use "Sair" no ícone da bandeja.', sw('data-g="closeToTray"', g.closeToTray)) +
       '<div class="section-title">Janela flutuante</div>' +
-      row('Mostrar janela flutuante', 'Pílula pequena com a atividade atual e o tempo restante. Duplo clique abre a janela principal.', sw('data-fl="enabled"', f.enabled)) +
-      row('Fixar no topo central da tela', 'Desative para poder arrastar a pílula para onde quiser.', sw('data-fl="fixedTop"', f.fixedTop)) +
-      row('Sempre visível (no topo)', 'Fica acima das outras janelas sem roubar o foco.', sw('data-fl="alwaysOnTop"', f.alwaysOnTop)) +
+      row('Mostrar janela flutuante', 'Pílula pequena, sempre acima das outras janelas, com a atividade atual e o tempo restante. Cliques fora dos botões passam para o que está atrás.', sw('data-fl="enabled"', f.enabled)) +
+      row('Posição na tela', 'Onde a pílula fica fixa.', '<select data-fl="position">' + [['top-center', 'Em cima, no centro'], ['bottom-center', 'Embaixo, no centro'], ['top-left', 'Canto superior esquerdo'], ['top-right', 'Canto superior direito'], ['bottom-left', 'Canto inferior esquerdo'], ['bottom-right', 'Canto inferior direito']].map(([v, l]) => '<option value="' + v + '"' + (v === f.position ? ' selected' : '') + '>' + l + '</option>').join('') + '</select>') +
       row('Opacidade', Math.round(f.opacity * 100) + '%', '<input type="range" min="40" max="100" step="5" value="' + Math.round(f.opacity * 100) + '" data-fl="opacity">') +
       '<div class="section-title">Backup</div>' +
       row('Exportar rotina', 'Salva toda a rotina e configurações em um arquivo JSON.', '<button class="btn" data-act="exportConfig">' + icon('download', 16) + 'Exportar</button>') +
@@ -589,7 +588,7 @@
     renderUpdateBox(await api.action('update:state'));
     panelEl.querySelectorAll('[data-g]').forEach((t) => t.addEventListener('change', () => App.commit((c) => { c.settings.general[t.dataset.g] = t.checked; })));
     panelEl.querySelectorAll('[data-fl]').forEach((t) => t.addEventListener('change', () => App.commit((c) => {
-      c.settings.floating[t.dataset.fl] = t.type === 'range' ? Number(t.value) / 100 : t.checked;
+      c.settings.floating[t.dataset.fl] = t.type === 'range' ? Number(t.value) / 100 : t.tagName === 'SELECT' ? t.value : t.checked;
     }, { rerender: t.type === 'range' })));
     panelEl.querySelectorAll('[data-act]').forEach((b) => (b.onclick = async () => {
       const r = await api.action(b.dataset.act);

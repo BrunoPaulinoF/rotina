@@ -8,14 +8,12 @@
   <style>
     html, body { background: transparent; overflow: hidden; height: 100%; }
     body { padding: 1px; }
-    body.free .pill { -webkit-app-region: drag; }
-    button { -webkit-app-region: no-drag; }
     .pill {
       --c: #7E93A8;
       position: relative; overflow: hidden;
       height: 100%; border-radius: 999px;
       display: flex; align-items: center; gap: 7px;
-      padding: 0 12px 0 10px;
+      padding: 0 3px 0 10px;
       background: linear-gradient(100deg, var(--c), color-mix(in srgb, var(--c) 72%, #061633));
       color: #fff; font-size: 12.5px; white-space: nowrap;
       border: 1px solid rgba(255, 255, 255, .35);
@@ -24,21 +22,20 @@
     .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
     .r { font-family: var(--display); font-weight: 700; font-size: 14px; font-variant-numeric: tabular-nums; }
     .bar { position: absolute; left: 0; bottom: 0; height: 2px; background: rgba(255, 255, 255, .85); transition: width 1s linear; }
-    .acts { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); display: none; gap: 2px; background: color-mix(in srgb, var(--c) 80%, #061633); border-radius: 999px; padding: 2px; }
-    .pill:hover .acts { display: flex; }
-    .acts button { border: 0; width: 22px; height: 22px; border-radius: 50%; background: transparent; color: #fff; display: grid; place-items: center; }
-    .acts button:hover { background: rgba(255, 255, 255, .25); }
+    .acts { display: flex; gap: 1px; margin-left: 2px; padding-left: 4px; border-left: 1px solid rgba(255, 255, 255, .3); }
+    .acts button { border: 0; width: 22px; height: 22px; border-radius: 50%; background: transparent; color: #fff; display: grid; place-items: center; opacity: .85; }
+    .acts button:hover { background: rgba(255, 255, 255, .28); opacity: 1; }
     .flash { animation: flash 1s ease-in-out 6; }
     @keyframes flash { 50% { filter: brightness(1.35); box-shadow: inset 0 0 0 2px #fff; } }
   </style>
 </head>
 <body>
-  <div class="pill" id="pill" title="Duplo clique abre a Rotina Desktop">
+  <div class="pill" id="pill">
     <span class="ic" id="ic"></span>
     <span class="t" id="t"></span>
     <span class="r" id="r"></span>
     <i class="bar" id="bar"></i>
-    <span class="acts"><button id="open" title="Abrir Rotina Desktop"></button><button id="close" title="Ocultar (reative pela bandeja)"></button></span>
+    <span class="acts" id="acts"><button id="open" title="Abrir Rotina Desktop"></button><button id="close" title="Ocultar (reative pela bandeja)"></button></span>
   </div>
   <script src="../shared/engine.js"></script>
   <script src="common.js"></script>

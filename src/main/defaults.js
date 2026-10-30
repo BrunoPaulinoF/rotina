@@ -116,8 +116,8 @@ function createDefaultConfig() {
       },
       floating: {
         enabled: true,
-        alwaysOnTop: true,
-        fixedTop: true,
+        // top-center, bottom-center, top-left, top-right, bottom-left, bottom-right
+        position: 'top-center',
         opacity: 1
       },
       general: {

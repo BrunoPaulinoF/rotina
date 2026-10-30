@@ -279,7 +279,6 @@ function buildStatus() {
     canSnooze: !!(state.lastAlert && t - state.lastAlert.firedAt < 60 * 60000),
     snoozes: state.snoozes.map((x) => ({ at: x.at, title: x.alert.title })),
     floatingVisible: !!(floatingWindow && !floatingWindow.isDestroyed() && floatingWindow.isVisible()),
-    alwaysOnTop: config.settings.floating.alwaysOnTop,
     simulated: clockOffset !== 0
   });
 }
@@ -453,28 +452,31 @@ function showMain(view) {
   }
 }
 
-// Pílula compacta: só a atividade atual e o tempo restante.
-const FLOAT_W = 250;
+// Pílula compacta, fixa em um dos 6 locais da tela, sempre acima das outras janelas.
+const FLOAT_W = 300;
 const FLOAT_H = 30;
-
-function topCenterBounds() {
-  const wa = screen.getPrimaryDisplay().workArea;
-  return { x: Math.round(wa.x + (wa.width - FLOAT_W) / 2), y: wa.y + 4, width: FLOAT_W, height: FLOAT_H };
-}
+let floatingTopTimer = null;
 
 function floatingBounds() {
-  const saved = state.floatingBounds;
-  if (config.settings.floating.fixedTop || !saved) return topCenterBounds();
-  const b = { x: saved.x, y: saved.y, width: FLOAT_W, height: FLOAT_H };
-  return boundsVisible(b) ? b : topCenterBounds();
+  const wa = screen.getPrimaryDisplay().workArea;
+  const pos = config.settings.floating.position;
+  const m = 8;
+  const x = pos.endsWith('left') ? wa.x + m : pos.endsWith('right') ? wa.x + wa.width - FLOAT_W - m : Math.round(wa.x + (wa.width - FLOAT_W) / 2);
+  const y = pos.startsWith('top') ? wa.y + 4 : wa.y + wa.height - FLOAT_H - 4;
+  return { x, y, width: FLOAT_W, height: FLOAT_H };
 }
 
-let floatingFixed = null;
+function keepFloatingOnTop() {
+  if (!floatingWindow || floatingWindow.isDestroyed()) return;
+  // Nível acima das janelas comuns; reforçado periodicamente porque o Windows pode rebaixar
+  // janelas "sempre no topo" quando outro app ativa a própria janela.
+  floatingWindow.setAlwaysOnTop(true, 'screen-saver');
+  floatingWindow.moveTop();
+}
 
 function createFloatingWindow() {
   const f = config.settings.floating;
   const b = floatingBounds();
-  floatingFixed = f.fixedTop;
   floatingWindow = new BrowserWindow({
     x: b.x,
     y: b.y,
@@ -484,36 +486,32 @@ function createFloatingWindow() {
     transparent: true,
     hasShadow: false,
     resizable: false,
-    movable: !f.fixedTop,
+    movable: false,
     maximizable: false,
     minimizable: false,
     fullscreenable: false,
     skipTaskbar: true,
-    alwaysOnTop: f.alwaysOnTop,
+    // Não recebe foco: clicar nos botões não tira o foco do que você está usando.
+    focusable: false,
+    alwaysOnTop: true,
     show: false,
     title: 'Rotina Desktop — mini',
     backgroundColor: '#00000000',
     icon: path.join(ASSETS, 'icon.ico'),
     webPreferences: webPrefs()
   });
-  if (f.alwaysOnTop) floatingWindow.setAlwaysOnTop(true, 'floating');
   floatingWindow.setOpacity(f.opacity);
-  floatingWindow.loadFile(path.join(RENDERER, 'floating.html'), { query: { fixed: f.fixedTop ? '1' : '0' } });
-  // showInactive: aparece sem roubar o foco do que você está usando.
-  floatingWindow.once('ready-to-show', () => floatingWindow.showInactive());
-  let boundsTimer = null;
-  const remember = () => {
-    if (config.settings.floating.fixedTop) return;
-    clearTimeout(boundsTimer);
-    boundsTimer = setTimeout(() => {
-      if (floatingWindow && !floatingWindow.isDestroyed()) {
-        state.floatingBounds = floatingWindow.getBounds();
-        saveStateSoon();
-      }
-    }, 500);
-  };
-  floatingWindow.on('move', remember);
+  // Cliques atravessam a pílula; o renderer reativa só enquanto o mouse está sobre os botões.
+  floatingWindow.setIgnoreMouseEvents(true, { forward: true });
+  floatingWindow.loadFile(path.join(RENDERER, 'floating.html'));
+  floatingWindow.once('ready-to-show', () => {
+    floatingWindow.showInactive();
+    keepFloatingOnTop();
+  });
+  clearInterval(floatingTopTimer);
+  floatingTopTimer = setInterval(keepFloatingOnTop, 3000);
   floatingWindow.on('closed', () => {
+    clearInterval(floatingTopTimer);
     floatingWindow = null;
     rebuildTrayMenu();
   });
@@ -576,13 +574,12 @@ function closePopup() {
 // ---------- configurações aplicadas ----------
 function applySettings() {
   const f = config.settings.floating;
-  // Trocar entre fixo e livre muda se a janela pode ser movida: recria.
-  if (floatingWindow && !floatingWindow.isDestroyed() && floatingFixed !== f.fixedTop) floatingWindow.destroy();
   if (f.enabled && !floatingWindow) createFloatingWindow();
   if (!f.enabled && floatingWindow && !floatingWindow.isDestroyed()) floatingWindow.destroy();
   if (floatingWindow && !floatingWindow.isDestroyed()) {
-    floatingWindow.setAlwaysOnTop(f.alwaysOnTop, 'floating');
+    floatingWindow.setBounds(floatingBounds());
     floatingWindow.setOpacity(f.opacity);
+    keepFloatingOnTop();
   }
   applyLoginItem();
   rebuildTrayMenu();
@@ -736,10 +733,10 @@ function registerIpc() {
       case 'openMain': return showMain(p.view);
       case 'floating:toggle': return setFloatingEnabled(!(floatingWindow && !floatingWindow.isDestroyed()));
       case 'floating:hide': return setFloatingEnabled(false);
-      case 'floating:alwaysOnTop': {
-        const next = JSON.parse(JSON.stringify(config));
-        next.settings.floating.alwaysOnTop = !!p.value;
-        return setConfig(next);
+      case 'floating:mouse': {
+        // Captura o mouse só enquanto ele está sobre os botões; no resto, o clique vai para trás.
+        if (floatingWindow && !floatingWindow.isDestroyed()) floatingWindow.setIgnoreMouseEvents(!p.capture, { forward: true });
+        return null;
       }
       case 'testSound': return playSound(p.name || config.settings.alerts.soundStart, p.volume);
       case 'testAlert': {

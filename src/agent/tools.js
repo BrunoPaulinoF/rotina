@@ -327,7 +327,7 @@ const TOOLS = [
   },
   {
     name: 'alterar_configuracoes',
-    description: 'Altera configurações (envie só o que mudar). alertas: enabled, soundStart/soundAdvance (sino, gota, duplo, marimba, harpa, digital, custom, none), volume (0-1), advanceEnabled, advanceMinutes, windowsNotification, popup, popupSeconds, snoozeMinutes. janela_flutuante: enabled, alwaysOnTop, fixedTop, opacity (0.4-1). geral: startWithWindows, closeToTray.',
+    description: 'Altera configurações (envie só o que mudar). alertas: enabled, soundStart/soundAdvance (sino, gota, duplo, marimba, harpa, digital, custom, none), volume (0-1), advanceEnabled, advanceMinutes, windowsNotification, popup, popupSeconds, snoozeMinutes. janela_flutuante: enabled, position (top-center, bottom-center, top-left, top-right, bottom-left, bottom-right), opacity (0.4-1). geral: startWithWindows, closeToTray.',
     inputSchema: { type: 'object', properties: { alertas: { type: 'object' }, janela_flutuante: { type: 'object' }, geral: { type: 'object' } } },
     run(a) {
       const cfg = load();

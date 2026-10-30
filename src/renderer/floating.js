@@ -8,12 +8,14 @@
   let sig = '';
   let flashTimer = null;
 
-  if (new URLSearchParams(location.search).get('fixed') !== '1') document.body.classList.add('free');
   $('open').innerHTML = icon('expand', 12);
   $('close').innerHTML = icon('x', 12);
   $('open').onclick = () => api.action('openMain');
   $('close').onclick = () => api.action('floating:hide');
-  $('pill').addEventListener('dblclick', () => api.action('openMain'));
+  // A janela ignora cliques (eles vão para o que está atrás); só os botões capturam o mouse.
+  $('acts').addEventListener('mouseenter', () => api.action('floating:mouse', { capture: true }));
+  $('acts').addEventListener('mouseleave', () => api.action('floating:mouse', { capture: false }));
+  document.addEventListener('mouseleave', () => api.action('floating:mouse', { capture: false }));
 
   function render(s) {
     const p = s.primary;
@@ -35,7 +37,7 @@
         $('ic').innerHTML = icon('moon', 14);
         $('t').textContent = s.next ? 'Livre · ' + s.next.title : 'Tempo livre';
       }
-      pill.title = (p ? p.title + ' (' + p.startLabel + '–' + p.endLabel + ')' : 'Tempo livre') + (s.next ? '\nDepois: ' + s.next.title + ' às ' + UI.timeLabel(s.nextAt) : '') + '\nDuplo clique abre a Rotina Desktop';
+      pill.title = (p ? p.title + ' (' + p.startLabel + '–' + p.endLabel + ')' : 'Tempo livre') + (s.next ? '\nDepois: ' + s.next.title + ' às ' + UI.timeLabel(s.nextAt) : '');
     }
     const ms = p ? s.remainingMs : s.nextAt ? s.nextAt - s.now : null;
     $('r').textContent = s.paused || ms == null ? '' : E.fmtDuration(ms, ms < 600000);

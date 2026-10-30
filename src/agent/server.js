@@ -14,7 +14,7 @@
 const readline = require('readline');
 const { TOOLS, INSTRUCTIONS, callTool, ToolError } = require('./tools');
 
-const VERSION = '1.1.0';
+const VERSION = require('../../package.json').version;
 const PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 
 const LIST_KEYS = new Set(['days', 'remover_ids', 'restaurar_ids', 'remover_extras', 'itens']);
