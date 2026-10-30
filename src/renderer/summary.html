@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'">
+  <title>O que você fez hoje?</title>
+  <link rel="stylesheet" href="base.css">
+  <style>
+    html, body { background: #fff; overflow: hidden; }
+    body { height: 100vh; display: flex; flex-direction: column; border: 1px solid #D7E0EC; -webkit-app-region: drag; }
+    button { -webkit-app-region: no-drag; }
+    .head { display: flex; align-items: center; gap: 12px; padding: 14px 14px 12px 16px; background: var(--navy); color: #fff; }
+    .head .tx { flex: 1; }
+    .head strong { display: block; font-size: 15.5px; }
+    .head small { opacity: .85; font-size: 12px; }
+    .x { border: 0; background: transparent; color: #fff; opacity: .8; width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; }
+    .x:hover { background: rgba(255,255,255,.2); opacity: 1; }
+    .list { flex: 1; overflow: auto; padding: 8px 12px; display: flex; flex-direction: column; gap: 6px; }
+    .it { --c: #7E93A8; display: flex; align-items: center; gap: 10px; padding: 7px 8px 7px 10px; border-radius: 10px; background: #F5F8FC; border-left: 4px solid var(--c); }
+    .it .ic { color: var(--c); display: grid; place-items: center; }
+    .it .t { flex: 1; min-width: 0; }
+    .it .t b { display: block; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .it .t small { color: var(--muted); font-size: 12px; }
+    .yn { border: 0; width: 34px; height: 30px; border-radius: 8px; color: #fff; font-weight: 800; font-size: 15px; }
+    .yn.yes { background: #1E9E62; }
+    .yn.no { background: #D93A4F; }
+    .yn:hover { filter: brightness(1.12); }
+    .foot { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--line); }
+    .foot .score { flex: 1; color: var(--muted); font-size: 12.5px; }
+    .foot .score b { color: var(--navy); }
+  </style>
+</head>
+<body>
+  <div class="head"><span data-i="checkCircle"></span><div class="tx"><strong>O que você fez hoje?</strong><small>Marque ✓ se fez e ✗ se não fez. O que ficar sem resposta conta como não feito.</small></div><button class="x" id="x" title="Depois"></button></div>
+  <div class="list" id="list"></div>
+  <div class="foot"><span class="score" id="score"></span><button class="btn small" id="later">Depois</button></div>
+  <script src="../shared/engine.js"></script>
+  <script src="common.js"></script>
+  <script src="summary.js"></script>
+</body>
+</html>

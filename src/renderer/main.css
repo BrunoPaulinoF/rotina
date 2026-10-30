@@ -27,7 +27,7 @@ body { display: flex; flex-direction: column; overflow: hidden; }
 .tabs button {
   display: flex; align-items: center; gap: 8px;
   border: 0; background: transparent; color: var(--muted);
-  padding: 8px 16px; border-radius: 9px; font-weight: 600;
+  padding: 8px 14px; border-radius: 9px; font-weight: 600; white-space: nowrap;
 }
 .tabs button:hover { color: var(--navy); }
 .tabs button.active { background: var(--card); color: var(--navy); box-shadow: 0 1px 3px rgba(15, 45, 92, .12); }
@@ -125,8 +125,68 @@ main { flex: 1; min-height: 0; position: relative; }
 .meta-text { font-size: 15px; }
 .meta-progress { display: flex; align-items: center; gap: 10px; }
 .meta-bar { flex: 1; height: 7px; background: #fff; border-radius: 7px; overflow: hidden; position: relative; }
-.meta-bar::after { content: ""; position: absolute; left: 70%; top: 0; bottom: 0; width: 2px; background: var(--warn); }
+.meta-bar::after { content: ""; position: absolute; left: var(--goal, 70%); top: 0; bottom: 0; width: 2px; background: var(--navy); }
 .meta-bar i { display: block; height: 100%; background: var(--ok); border-radius: 7px; transition: width .4s; }
+.meta-bar i.below { background: var(--warn); }
+.meta-pending { grid-column: 1 / -1; margin-top: 4px; border: 0; border-radius: 8px; padding: 7px 10px; background: #FFF4E5; color: #8A4B00; font-weight: 700; font-size: 12.5px; text-align: left; }
+.meta-pending:hover { background: #FFE9CC; }
+
+/* ✓/✗ na linha do tempo */
+.ck { display: flex; gap: 4px; }
+.ck-btn { border: 1px solid rgba(255, 255, 255, .55); width: 28px; height: 26px; border-radius: 8px; background: rgba(255, 255, 255, .14); color: #fff; font-weight: 800; font-size: 14px; display: grid; place-items: center; }
+.ck-btn:hover { background: rgba(255, 255, 255, .3); }
+.ck-btn.yes.on { background: #1E9E62; border-color: #fff; box-shadow: 0 0 0 2px rgba(255, 255, 255, .5); }
+.ck-btn.no.on { background: #D93A4F; border-color: #fff; box-shadow: 0 0 0 2px rgba(255, 255, 255, .5); }
+.ck-static { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; color: #fff; }
+.ck-static.yes { background: #1E9E62; }
+.ck-static.no { background: #D93A4F; }
+.tl-item.st-feito .tl-time { background: #DDF3E8; color: #157347; }
+.tl-item.st-nao-feito .tl-time, .tl-item.st-sem-resposta .tl-time { background: #FBE3E6; color: #A62639; }
+.tl-item.st-pendente .ck-btn { animation: nudge 2s ease-in-out infinite; }
+/* Atividades que já passaram e contam na meta ficam legíveis para conferir o ✓/✗. */
+.tl-item.done.st-feito, .tl-item.done.st-nao-feito, .tl-item.done.st-sem-resposta, .tl-item.done.st-pendente { opacity: .9; }
+@keyframes nudge { 50% { background: rgba(255, 255, 255, .32); } }
+
+/* ---------- relatórios ---------- */
+.report { display: flex; flex-direction: column; gap: 18px; }
+.report .band .filter button { background: rgba(255, 255, 255, .12); color: #fff; border-color: transparent; }
+.report .band .filter button.active { background: #fff; color: var(--navy); }
+.report-body { padding: 16px 18px 18px; }
+.report-body .section-title small { text-transform: none; letter-spacing: 0; font-weight: 500; }
+.kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.kpi { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 2px; background: #FAFBFD; }
+.kpi strong { font-family: var(--display); font-size: 32px; color: var(--navy); line-height: 1.1; }
+.kpi span { font-weight: 700; color: var(--ink); }
+.kpi small { color: var(--muted); }
+.kpi.ok strong { color: var(--ok); }
+.kpi.low strong { color: var(--warn); }
+.report-alert { margin-top: 14px; display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 10px; background: #FFF4E5; color: #8A4B00; font-weight: 600; }
+.report-alert .btn { margin-left: auto; }
+.bars { position: relative; display: flex; align-items: flex-end; gap: 8px; height: 230px; padding: 0 4px; overflow-x: auto; }
+.bar-col { flex: 1; min-width: 34px; max-width: 70px; height: 100%; display: flex; flex-direction: column; align-items: center; gap: 4px; border: 0; background: transparent; padding: 0; cursor: pointer; }
+.bar-col:hover .bar-track { background: #E3EAF4; }
+.bar-val { font-size: 11px; font-weight: 700; color: var(--muted); }
+.bar-track { flex: 1; width: 100%; background: #EEF2F8; border-radius: 8px; display: flex; align-items: flex-end; overflow: hidden; }
+.bar-track i { display: block; width: 100%; border-radius: 8px 8px 0 0; }
+.bar-track i.ok { background: var(--ok); }
+.bar-track i.low { background: var(--warn); }
+.bar-lbl { font-family: var(--display); font-weight: 700; color: var(--navy); font-size: 12px; text-align: center; line-height: 1.1; }
+.bar-lbl small { display: block; font-family: var(--font); font-weight: 500; color: var(--muted); font-size: 10.5px; }
+/* linha da meta: a barra ocupa ~183px acima do rótulo (~30px); --goal é um número (ex.: 70) */
+.goal-line { position: absolute; left: 0; right: 0; bottom: calc(30px + 183px * var(--goal) / 100); border-top: 2px dashed var(--navy); pointer-events: none; opacity: .55; }
+.goal-line em { position: absolute; right: 0; top: -18px; font-style: normal; font-size: 11px; font-weight: 700; color: var(--navy); background: #fff; padding: 0 4px; }
+.report-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+.rrow { display: grid; grid-template-columns: 12px minmax(0, 1fr) 110px 42px 40px; align-items: center; gap: 8px; padding: 6px 0; }
+.rdot { width: 10px; height: 10px; border-radius: 50%; }
+.rname { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rbar { position: relative; height: 8px; background: #EEF2F8; border-radius: 8px; overflow: visible; }
+.rbar i { display: block; height: 100%; border-radius: 8px; }
+.rbar b { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--navy); opacity: .5; }
+.rval { font-weight: 700; text-align: right; }
+.rcount { color: var(--muted); }
+.muted-p { color: var(--muted); margin: 6px 0; }
+.track-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+@media (max-width: 1250px) { .report-grid { grid-template-columns: 1fr; } .kpis { grid-template-columns: repeat(2, 1fr); } }
 .meta-progress small { color: var(--muted); font-weight: 600; white-space: nowrap; }
 
 /* linha do tempo */

@@ -13,8 +13,20 @@
   $('open').onclick = () => api.action('openMain');
   $('close').onclick = () => api.action('floating:hide');
   // A janela ignora cliques (eles vão para o que está atrás); só os botões capturam o mouse.
-  $('acts').addEventListener('mouseenter', () => api.action('floating:mouse', { capture: true }));
-  $('acts').addEventListener('mouseleave', () => api.action('floating:mouse', { capture: false }));
+  for (const id of ['acts', 'ask']) {
+    $(id).addEventListener('mouseenter', () => api.action('floating:mouse', { capture: true }));
+    $(id).addEventListener('mouseleave', () => api.action('floating:mouse', { capture: false }));
+  }
+  let askItem = null;
+  const answer = (status) => {
+    if (!askItem) return;
+    const item = askItem;
+    $('ask').hidden = true;
+    api.action('floating:mouse', { capture: false });
+    api.action('checkin:set', { dateKey: item.key.split('|')[0], id: item.id, status, origem: 'pilula' });
+  };
+  $('yes').onclick = () => answer('feito');
+  $('no').onclick = () => answer('nao-feito');
   document.addEventListener('mouseleave', () => api.action('floating:mouse', { capture: false }));
 
   function render(s) {
@@ -42,6 +54,17 @@
     const ms = p ? s.remainingMs : s.nextAt ? s.nextAt - s.now : null;
     $('r').textContent = s.paused || ms == null ? '' : E.fmtDuration(ms, ms < 600000);
     $('bar').style.width = p && !s.paused ? (s.progress * 100).toFixed(2) + '%' : '0';
+
+    // Pergunta ✓/✗ perto do fim da atividade (e um tempo depois)
+    const ask = s.checkin && s.checkin.prompt;
+    if (ask) {
+      askItem = ask;
+      $('q').textContent = 'Fez ' + ask.title + '?';
+      $('q').title = ask.title + ' (' + ask.start + '–' + ask.end + ')';
+    } else {
+      askItem = null;
+    }
+    $('ask').hidden = !ask;
   }
 
   // No alerta, a pílula pisca por alguns segundos (o cartão com "Adiar" aparece no canto).

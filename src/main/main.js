@@ -17,6 +17,7 @@ const { detectConnections, buildAgentPrompt, buildAgentGuide } = require('./agen
 const { startInbox } = require('./inbox');
 const { startBridgeServer, registerAppPath } = require('../agent/bridge');
 const { callTool } = require('../agent/tools');
+const { History, periodRange } = require('./history');
 
 const APP_ID = 'com.rotinadesktop.app';
 const ROOT = path.join(__dirname, '..', '..');
@@ -89,6 +90,107 @@ function loadData() {
   config = normalizeConfig(rawConfig || createDefaultConfig());
   if (!rawConfig) configStore.save(config);
   state = normalizeState(stateStore.load());
+  history = new History(dir);
+  // Pausa que continuava ao fechar o app: mantém registrada (atividades nela ficam fora da meta).
+  if (state.paused && !history.data().pausas.some((p) => p.fim == null)) history.addPause(now());
+}
+
+// ---------- registro de ✓/✗ ----------
+let history = null;
+let snapshotKey = '';
+let summaryCheckedAt = 0;
+let summaryWindow = null;
+
+/** Mantém a foto de hoje (atividades que contam na meta) em dia com a rotina. */
+function ensureSnapshot(force) {
+  const key = engine.dateKey(now()) + '|' + (force ? Date.now() : '');
+  if (!force && snapshotKey.startsWith(engine.dateKey(now()) + '|')) return;
+  try {
+    history.snapshotDay(config, new Date(now()));
+    snapshotKey = key;
+  } catch (err) {
+    log('Erro ao registrar o dia no histórico: ' + err.message);
+  }
+}
+
+function checkinInfo(t) {
+  const c = config.settings.checkin;
+  const today = history.day(engine.dateKey(t), t);
+  if (!c.enabled || !today) return { enabled: c.enabled, goal: c.goal, today, prompt: null, pending: 0 };
+  // Pílula: atividade nos últimos minutos ou que acabou há pouco, ainda sem resposta.
+  const windowItems = history.prompts(today.dateKey, t, c.beforeMinutes * 60000).filter((i) => t - i.endMs <= c.afterMinutes * 60000);
+  const prompt = state.paused ? null : windowItems[0] || null;
+  return { enabled: true, goal: c.goal, today, prompt, pending: today.pendentes };
+}
+
+function setCheckin(dateKey, id, status, origem) {
+  const item = history.setStatus(config, dateKey, id, status, origem, now());
+  log('Registro: ' + item.title + ' (' + dateKey + ') = ' + (status || 'limpo') + ' [' + origem + ']');
+  broadcast('history', { dateKey });
+  pushStatus(true);
+  if (summaryWindow && !summaryWindow.isDestroyed()) summaryWindow.webContents.send('summary:data', summaryData());
+  return item;
+}
+
+function summaryData() {
+  const t = now();
+  const today = history.day(engine.dateKey(t), t);
+  return { items: today ? today.itens.filter((i) => i.status === 'pendente') : [], today, goal: config.settings.checkin.goal };
+}
+
+/** Cartão com tudo que ficou sem resposta hoje (17:00 e 21:30, ou pela bandeja). */
+function showSummary() {
+  const data = summaryData();
+  if (!data.items.length) {
+    if (summaryWindow && !summaryWindow.isDestroyed()) summaryWindow.destroy();
+    return false;
+  }
+  const height = Math.min(480, 160 + data.items.length * 52);
+  const b = cornerBounds(420, height);
+  if (summaryWindow && !summaryWindow.isDestroyed()) {
+    summaryWindow.setBounds(b);
+    summaryWindow.webContents.send('summary:data', data);
+    summaryWindow.showInactive();
+    return true;
+  }
+  summaryWindow = new BrowserWindow(Object.assign({}, b, {
+    frame: false,
+    resizable: false,
+    maximizable: false,
+    minimizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    focusable: false,
+    show: false,
+    backgroundColor: '#FFFFFF',
+    webPreferences: webPrefs()
+  }));
+  summaryWindow.setAlwaysOnTop(true, 'pop-up-menu');
+  summaryWindow.loadFile(path.join(RENDERER, 'summary.html'));
+  summaryWindow.webContents.once('did-finish-load', () => {
+    if (!summaryWindow || summaryWindow.isDestroyed()) return;
+    summaryWindow.webContents.send('summary:data', data);
+    summaryWindow.showInactive();
+  });
+  summaryWindow.on('closed', () => {
+    summaryWindow = null;
+  });
+  return true;
+}
+
+/** Abre o resumo nos horários configurados (só quando o horário passa com o app aberto). */
+function checkSummaryTimes() {
+  const t = now();
+  const c = config.settings.checkin;
+  if (!summaryCheckedAt) summaryCheckedAt = t;
+  if (c.enabled && !state.paused) {
+    for (const hm of c.summaryTimes) {
+      const at = engine.atMinutes(new Date(t), engine.parseHM(hm));
+      if (at > summaryCheckedAt && at <= t && t - at < 60000 && showSummary()) log('Resumo do dia aberto (' + hm + ')');
+    }
+  }
+  summaryCheckedAt = t;
 }
 
 function saveStateSoon() {
@@ -105,11 +207,13 @@ function saveStateNow() {
 }
 
 let lastConfigText = '';
+let historyTimer = null;
 
 function setConfig(next) {
   config = normalizeConfig(next);
   configStore.save(config);
   lastConfigText = JSON.stringify(config);
+  if (history) ensureSnapshot(true);
   applySettings();
   broadcast('config', config);
   pushStatus(true);
@@ -134,6 +238,15 @@ function watchConfigFile() {
   };
   try {
     fs.watch(dir, (_event, name) => {
+      if (name === 'historico.json') {
+        // Marcação feita por um agente: atualiza as telas.
+        clearTimeout(historyTimer);
+        historyTimer = setTimeout(() => {
+          broadcast('history', {});
+          pushStatus(true);
+        }, 300);
+        return;
+      }
       if (name && name !== 'config.json') return;
       clearTimeout(timer);
       timer = setTimeout(reload, 300);
@@ -254,7 +367,8 @@ function buildStatus() {
     canSnooze: !!(state.lastAlert && t - state.lastAlert.firedAt < 60 * 60000),
     snoozes: state.snoozes.map((x) => ({ at: x.at, title: x.alert.title })),
     floatingVisible: !!(floatingWindow && !floatingWindow.isDestroyed() && floatingWindow.isVisible()),
-    simulated: clockOffset !== 0
+    simulated: clockOffset !== 0,
+    checkin: checkinInfo(t)
   });
 }
 
@@ -270,6 +384,7 @@ function pushStatus(force) {
   const live = windows().filter((w) => force || (w.isVisible() && !w.isMinimized()));
   const status = buildStatus();
   for (const w of live) w.webContents.send('status', status);
+  fitFloating(!!status.checkin.prompt);
   updateTray(status);
 }
 
@@ -279,6 +394,8 @@ function scheduleTick() {
   tickTimer = setTimeout(() => {
     try {
       alerts.tick();
+      ensureSnapshot(false);
+      checkSummaryTimes();
       pushStatus(false);
     } catch (err) {
       log('Erro no tick: ' + (err && err.stack ? err.stack : err));
@@ -429,16 +546,33 @@ function showMain(view) {
 
 // Pílula compacta, fixa em um dos 6 locais da tela, sempre acima das outras janelas.
 const FLOAT_W = 300;
+const FLOAT_W_CHECKIN = 470; // com a pergunta "fez?" e os botões ✓/✗
 const FLOAT_H = 30;
 let floatingTopTimer = null;
+let floatingWide = false;
 
 function floatingBounds() {
   const wa = screen.getPrimaryDisplay().workArea;
   const pos = config.settings.floating.position;
+  const w = floatingWide ? FLOAT_W_CHECKIN : FLOAT_W;
   const m = 8;
-  const x = pos.endsWith('left') ? wa.x + m : pos.endsWith('right') ? wa.x + wa.width - FLOAT_W - m : Math.round(wa.x + (wa.width - FLOAT_W) / 2);
+  const x = pos.endsWith('left') ? wa.x + m : pos.endsWith('right') ? wa.x + wa.width - w - m : Math.round(wa.x + (wa.width - w) / 2);
   const y = pos.startsWith('top') ? wa.y + 4 : wa.y + wa.height - FLOAT_H - 4;
-  return { x, y, width: FLOAT_W, height: FLOAT_H };
+  return { x, y, width: w, height: FLOAT_H };
+}
+
+/** Alarga a pílula enquanto há uma pergunta ✓/✗ e volta ao tamanho normal depois. */
+function fitFloating(wide) {
+  if (wide === floatingWide) return;
+  floatingWide = wide;
+  if (floatingWindow && !floatingWindow.isDestroyed()) floatingWindow.setBounds(floatingBounds());
+}
+
+/** Canto inferior direito, acima da pílula quando ela também está lá. */
+function cornerBounds(width, height) {
+  const wa = screen.getPrimaryDisplay().workArea;
+  const lift = config.settings.floating.enabled && config.settings.floating.position === 'bottom-right' ? FLOAT_H + 8 : 0;
+  return { x: wa.x + wa.width - width - 16, y: wa.y + wa.height - height - 16 - lift, width, height };
 }
 
 function keepFloatingOnTop() {
@@ -455,8 +589,8 @@ function createFloatingWindow() {
   floatingWindow = new BrowserWindow({
     x: b.x,
     y: b.y,
-    width: FLOAT_W,
-    height: FLOAT_H,
+    width: b.width,
+    height: b.height,
     frame: false,
     transparent: true,
     hasShadow: false,
@@ -505,14 +639,13 @@ function setFloatingEnabled(enabled) {
 
 function showPopup(alert) {
   closePopup();
-  const wa = screen.getPrimaryDisplay().workArea;
-  const width = 380;
-  const height = 168;
+  // Não cobre a pílula quando ela está no canto inferior direito.
+  const b = cornerBounds(380, 168);
   popupWindow = new BrowserWindow({
-    x: wa.x + wa.width - width - 16,
-    y: wa.y + wa.height - height - 16,
-    width,
-    height,
+    x: b.x,
+    y: b.y,
+    width: b.width,
+    height: b.height,
     frame: false,
     resizable: false,
     movable: true,
@@ -584,8 +717,12 @@ function createTray() {
 }
 
 function setPaused(paused) {
+  if (state.paused === paused) return;
   state.paused = paused;
   saveStateNow();
+  // Atividades que terminam durante a pausa ficam fora da meta.
+  if (paused) history.addPause(now());
+  else history.endPause(now());
   log(paused ? 'Rotina pausada' : 'Rotina retomada');
   if (tray) tray.setImage(trayIcon());
   // Ao retomar, não dispara o que passou durante a pausa.
@@ -631,11 +768,16 @@ function rebuildTrayMenu() {
   const canSnooze = !!(state.lastAlert && t - state.lastAlert.firedAt < 60 * 60000);
   const floatingOn = !!(floatingWindow && !floatingWindow.isDestroyed());
   const label = s.primary ? 'Agora: ' + s.primary.title + ' (até ' + s.primary.endLabel + ')' : 'Tempo livre';
+  const today = history ? history.day(engine.dateKey(t), t) : null;
+  const pending = today ? today.pendentes : 0;
   tray.setContextMenu(Menu.buildFromTemplate([
     { label, enabled: false },
     { label: s.next ? 'Próxima: ' + s.next.title : 'Sem próximas atividades', enabled: false },
+    { label: today && today.total ? 'Hoje: ' + today.feitos + ' de ' + today.total + ' feitas (' + Math.round(today.taxa * 100) + '%, meta ' + config.settings.checkin.goal + '%)' : 'Hoje: nada para contar ainda', enabled: false },
     { type: 'separator' },
     { label: 'Abrir Rotina Desktop', click: () => showMain() },
+    { label: pending ? 'Marcar o que fiz hoje (' + pending + ' sem resposta)…' : 'Nada para marcar agora', enabled: pending > 0, click: () => showSummary() },
+    { label: 'Relatórios', click: () => showMain('relatorios') },
     { label: 'Janela flutuante', type: 'checkbox', checked: floatingOn, click: (mi) => setFloatingEnabled(mi.checked) },
     { type: 'separator' },
     state.paused ? { label: 'Retomar rotina', click: () => setPaused(false) } : { label: 'Pausar rotina', click: () => setPaused(true) },
@@ -671,7 +813,9 @@ function updateTray(status) {
   if (status.paused) tip += ' — pausada';
   else if (status.primary) tip += '\n' + status.primary.title + '\nTermina ' + status.primary.endLabel + ' · faltam ' + engine.fmtDuration(status.remainingMs);
   else if (status.next) tip += '\nTempo livre · próxima: ' + status.next.title;
-  const label = tip.replace(/faltam .*$/, '');
+  // O menu também mostra o placar do dia: reconstrói quando ele muda.
+  const c = status.checkin;
+  const label = tip.replace(/faltam .*$/, '') + '|' + c.pending + '|' + (c.today ? c.today.feitos + '/' + c.today.total : '');
   tray.setToolTip(tip.slice(0, 127));
   if (label !== lastTrayLabel) {
     lastTrayLabel = label;
@@ -704,6 +848,27 @@ function registerIpc() {
       case 'mute': return mute(p.minutes || 30);
       case 'unmute': return unmute();
       case 'snooze': return snooze(p.minutes);
+      case 'checkin:set': {
+        try {
+          return { ok: true, item: setCheckin(p.dateKey || engine.dateKey(now()), p.id, p.status || null, p.origem || 'app') };
+        } catch (err) {
+          return { ok: false, error: err.message };
+        }
+      }
+      case 'checkin:summary': return showSummary();
+      case 'checkin:closeSummary': {
+        if (summaryWindow && !summaryWindow.isDestroyed()) summaryWindow.destroy();
+        return null;
+      }
+      case 'history:day': {
+        const key = p.dateKey || engine.dateKey(now());
+        if (key === engine.dateKey(now())) ensureSnapshot(false);
+        return history.day(key, now());
+      }
+      case 'history:report': {
+        const [from, to] = p.de ? [p.de, p.ate] : periodRange(p.periodo || 'semana', now());
+        return history.report(from, to, now(), config.settings.checkin.goal);
+      }
       case 'dismissAlert': return dismissAlert();
       case 'openMain': return showMain(p.view);
       case 'floating:toggle': return setFloatingEnabled(!(floatingWindow && !floatingWindow.isDestroyed()));
@@ -792,12 +957,12 @@ async function runCapture(dir) {
     fs.writeFileSync(path.join(out, name + '.png'), img.toPNG());
   };
   await wait(2500);
-  for (const view of ['hoje', 'semana', 'regras', 'config']) {
+  for (const view of ['hoje', 'semana', 'relatorios', 'regras', 'config']) {
     await mainWindow.webContents.executeJavaScript('window.__showView && window.__showView(' + JSON.stringify(view) + ')');
     await wait(700);
     await shot(mainWindow, 'main-' + view);
   }
-  for (const panel of ['alertas', 'excecoes', 'agentes', 'geral']) {
+  for (const panel of ['meta', 'alertas', 'excecoes', 'agentes', 'geral']) {
     await mainWindow.webContents.executeJavaScript('window.__showSettings && window.__showSettings(' + JSON.stringify(panel) + ')');
     await wait(500);
     log('Captura ' + panel + ': ' + (await mainWindow.webContents.executeJavaScript('(document.querySelector("#config-panel h2") || {}).textContent')));
@@ -807,6 +972,11 @@ async function runCapture(dir) {
   await wait(500);
   await shot(mainWindow, 'config-editar-atividade');
   if (floatingWindow) await shot(floatingWindow, 'floating');
+  if (showSummary()) {
+    await wait(1500);
+    if (summaryWindow) await shot(summaryWindow, 'resumo');
+    summaryWindow.destroy();
+  }
   const status = engine.getStatus(config, now());
   const it = status.primary || status.next;
   if (it) {

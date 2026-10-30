@@ -1,7 +1,7 @@
 'use strict';
 const { contextBridge, ipcRenderer } = require('electron');
 
-const CHANNELS = new Set(['status', 'config', 'alert', 'alert:dismiss', 'navigate', 'audio:play', 'popup:data', 'update']);
+const CHANNELS = new Set(['status', 'config', 'alert', 'alert:dismiss', 'navigate', 'audio:play', 'popup:data', 'update', 'history', 'summary:data']);
 
 contextBridge.exposeInMainWorld('rotina', {
   getConfig: () => ipcRenderer.invoke('config:get'),

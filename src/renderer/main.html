@@ -22,7 +22,8 @@
     <nav class="tabs" id="tabs">
       <button data-view="hoje" class="active"><span data-icon="clock"></span>Hoje</button>
       <button data-view="semana"><span data-icon="calendar"></span>Semana</button>
-      <button data-view="regras"><span data-icon="star"></span>Regras e casa</button>
+      <button data-view="relatorios"><span data-icon="target"></span>Relatórios</button>
+      <button data-view="regras"><span data-icon="star"></span>Regras</button>
       <button data-view="config"><span data-icon="settings"></span>Configurações</button>
     </nav>
     <div class="top-right">
@@ -58,7 +59,8 @@
           <div class="card meta-card">
             <span class="meta-icon" data-icon="target" data-size="34"></span>
             <div class="meta-text"><strong>META:</strong> <span id="meta-text"></span></div>
-            <div class="meta-progress"><div class="meta-bar"><i id="meta-bar"></i></div><small id="meta-count"></small></div>
+            <div class="meta-progress"><div class="meta-bar" id="meta-bar-wrap"><i id="meta-bar"></i></div><small id="meta-count"></small></div>
+            <button class="meta-pending hidden" id="meta-pending"></button>
           </div>
         </aside>
 
@@ -95,6 +97,11 @@
       </div>
     </section>
 
+    <!-- RELATÓRIOS -->
+    <section id="view-relatorios" class="view">
+      <div class="report" id="report"></div>
+    </section>
+
     <!-- REGRAS -->
     <section id="view-regras" class="view">
       <div class="rules-grid" id="rules-grid"></div>
@@ -106,6 +113,7 @@
         <nav class="config-nav" id="config-nav">
           <button data-panel="atividades" class="active"><span data-icon="list"></span>Atividades</button>
           <button data-panel="categorias"><span data-icon="star"></span>Categorias e cores</button>
+          <button data-panel="meta"><span data-icon="target"></span>Meta e registro</button>
           <button data-panel="alertas"><span data-icon="bell"></span>Alertas e sons</button>
           <button data-panel="semana"><span data-icon="home"></span>Tarefas da semana</button>
           <button data-panel="excecoes"><span data-icon="calendar"></span>Exceções de datas</button>
@@ -127,5 +135,6 @@
   <script src="common.js"></script>
   <script src="main.js"></script>
   <script src="settings.js"></script>
+  <script src="reports.js"></script>
 </body>
 </html>

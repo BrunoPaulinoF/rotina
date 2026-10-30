@@ -62,6 +62,14 @@ function uniqueId(base, used) {
   return id;
 }
 
+// Hábitos e trabalho contam na meta; filho, refeições, família, compromissos e básicos não.
+const TRACKED_CATEGORIES = new Set(['trabalho', 'comercial', 'estudo', 'idiomas', 'comunicacao', 'projetos', 'fechamento', 'corpo', 'sono']);
+const TRACKED_IDS = new Set(['acordar', 'acordar-sab', 'acordar-dom', 'telas']);
+
+function defaultTrack(id, category) {
+  return TRACKED_IDS.has(id) || TRACKED_CATEGORIES.has(category);
+}
+
 function normalizeActivity(a, catIds, used, isExtra) {
   if (!isObj(a)) return null;
   const start = parseHM(a.start);
@@ -80,6 +88,8 @@ function normalizeActivity(a, catIds, used, isExtra) {
     priority: Math.round(num(a.priority, 0, 0, 100)),
     alertStart: bool(a.alertStart, true),
     alertAdvance: bool(a.alertAdvance, true),
+    // Pede ✓/✗ e conta na meta. Sem valor salvo (rotinas antigas), segue o padrão por categoria.
+    track: bool(a.track, defaultTrack(a.id, a.category)),
     enabled: bool(a.enabled, true)
   };
   if (isExtra) delete out.days;
@@ -140,6 +150,9 @@ function normalizeConfig(input) {
   const sa = isObj(s.alerts) ? s.alerts : {};
   const sf = isObj(s.floating) ? s.floating : {};
   const sg = isObj(s.general) ? s.general : {};
+  const sc = isObj(s.checkin) ? s.checkin : {};
+  const dc = def.settings.checkin;
+  const times = (Array.isArray(sc.summaryTimes) ? sc.summaryTimes : dc.summaryTimes).map((t) => String(t).trim()).filter((t) => parseHM(t) != null);
   const da = def.settings.alerts;
   const df = def.settings.floating;
   const dg = def.settings.general;
@@ -175,6 +188,13 @@ function normalizeConfig(input) {
         startWithWindows: bool(sg.startWithWindows, dg.startWithWindows),
         closeToTray: bool(sg.closeToTray, dg.closeToTray),
         autoUpdateCheck: bool(sg.autoUpdateCheck, dg.autoUpdateCheck)
+      },
+      checkin: {
+        enabled: bool(sc.enabled, dc.enabled),
+        goal: Math.round(num(sc.goal, dc.goal, 1, 100)),
+        beforeMinutes: Math.round(num(sc.beforeMinutes, dc.beforeMinutes, 0, 60)),
+        afterMinutes: Math.round(num(sc.afterMinutes, dc.afterMinutes, 1, 180)),
+        summaryTimes: Array.from(new Set(times)).sort().map((t) => t.padStart(5, '0'))
       }
     }
   };
@@ -196,4 +216,4 @@ function normalizeState(input) {
   };
 }
 
-module.exports = { JsonStore, normalizeConfig, normalizeState, slug, FLOAT_POSITIONS };
+module.exports = { JsonStore, normalizeConfig, normalizeState, slug, FLOAT_POSITIONS, defaultTrack };

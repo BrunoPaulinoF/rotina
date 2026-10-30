@@ -98,6 +98,28 @@ test('MCP: exceção de data (feriado) e tarefas da semana', async () => {
   s.close();
 });
 
+test('MCP: registrar ✓/✗ e ver relatório de produtividade', async () => {
+  const dir = tmpData();
+  const s = mcpSession(dir);
+  const ontem = await s.call('ver_dia', { data: 'ontem' });
+  assert.ok(!ontem.isError);
+  const ok = await s.call('registrar_conclusao', { id: 'cama', status: 'feito', data: 'ontem' });
+  assert.ok(!ok.isError, ok.content[0].text);
+  assert.match(ok.content[0].text, /✓ feito/);
+  const no = await s.call('registrar_conclusao', { id: 'telas', status: 'nao_feito', data: 'ontem' });
+  assert.match(no.content[0].text, /✗ não feito/);
+  const bad = await s.call('registrar_conclusao', { id: 'cama', status: 'feito', data: '2020-01-01' });
+  assert.equal(bad.isError, true);
+  const dia = await s.call('ver_dia', { data: 'ontem' });
+  assert.match(dia.content[0].text, /Cama.*conta na meta.*✓ feito/);
+  const rel = await s.call('ver_relatorio', { periodo: '30dias' });
+  assert.match(rel.content[0].text, /meta 70%/);
+  assert.match(rel.content[0].text, /Desligar as telas \[telas\]: 0\/1/);
+  const hist = JSON.parse(fs.readFileSync(path.join(dir, 'historico.json'), 'utf8'));
+  assert.ok(Object.keys(hist.dias).length >= 1);
+  s.close();
+});
+
 test('linha de comando: ajuda e chamada de ferramenta', () => {
   const dir = tmpData();
   const env = Object.assign({}, process.env, { ROTINA_DATA_DIR: dir });

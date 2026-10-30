@@ -176,6 +176,7 @@ function getDayPlan(config, value) {
       priority: Number(a.priority) || 0,
       alertStart: a.alertStart !== false,
       alertAdvance: a.alertAdvance !== false,
+      track: !!a.track,
       extra: !!a.extra
     });
   }

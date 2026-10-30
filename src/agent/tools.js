@@ -11,6 +11,7 @@ const path = require('path');
 const engine = require('../shared/engine');
 const { JsonStore, normalizeConfig, normalizeState } = require('../main/store');
 const { createDefaultConfig } = require('../main/defaults');
+const { History, periodRange } = require('../main/history');
 
 function dataDir() {
   return process.env.ROTINA_DATA_DIR || path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'Rotina Desktop');
@@ -57,17 +58,37 @@ function parseDate(v) {
   return engine.parseDateKey(v) || fail('Data inválida: "' + v + '". Use AAAA-MM-DD, "hoje" ou "amanhã".');
 }
 
-const shortItem = (i) => i.startLabel + '–' + i.endLabel + '  ' + i.title + (i.subtitle ? ' — ' + i.subtitle : '') + '  [id: ' + i.id + ', ' + i.categoryName + (i.priority > 0 ? ', compromisso' : '') + (i.alertStart || i.alertAdvance ? '' : ', sem alertas') + ']';
+const STATUS_LABEL = { feito: '✓ feito', 'nao-feito': '✗ não feito', pendente: '? falta marcar', 'sem-resposta': '✗ sem resposta', pausado: 'pausado' };
+
+const shortItem = (i, status) => i.startLabel + '–' + i.endLabel + '  ' + i.title + (i.subtitle ? ' — ' + i.subtitle : '') + '  [id: ' + i.id + ', ' + i.categoryName + (i.priority > 0 ? ', compromisso' : '') + (i.track ? ', conta na meta' : '') + (i.alertStart || i.alertAdvance ? '' : ', sem alertas') + ']' + (status && STATUS_LABEL[status] ? '  ' + STATUS_LABEL[status] : '');
+
+function history() {
+  return new History(dataDir());
+}
+
+function goal() {
+  return load().settings.checkin.goal;
+}
+
+function pct(x) {
+  return Math.round(x * 100) + '%';
+}
 
 function dayText(cfg, d) {
   const plan = engine.getDayPlan(cfg, d);
+  const hist = history().day(plan.dateKey, Date.now());
+  const statusOf = (i) => {
+    const h = hist && hist.itens.find((x) => x.key === i.key);
+    return h ? h.status : null;
+  };
+  const meta = hist && hist.total ? '\nMeta: ' + hist.feitos + ' de ' + hist.total + ' feitas (' + pct(hist.taxa) + ', meta ' + cfg.settings.checkin.goal + '%)' + (hist.pendentes ? ' · ' + hist.pendentes + ' para marcar' : '') : '';
   const head = engine.WEEKDAY_NAMES[plan.weekday] + ', ' + engine.fmtLongDate(d) + ' (' + plan.dateKey + ')';
   let note = '';
   if (plan.off) note = '\nExceção: dia livre' + (plan.exception.note ? ' — ' + plan.exception.note : '');
   else if (plan.exception) note = '\nExceção' + (plan.baseDay !== plan.weekday ? ': usando a rotina de ' + engine.WEEKDAY_NAMES[plan.baseDay] : '') + (plan.exception.note ? ' — ' + plan.exception.note : '');
   const w = plan.weekly;
   const weekly = [w.casa && 'Casa: ' + w.casa, w.nota, w.projeto && 'Projeto: ' + w.projeto].filter(Boolean).join(' · ');
-  return head + note + (weekly ? '\n' + weekly : '') + '\n' + (plan.items.length ? plan.items.map(shortItem).join('\n') : '(nenhuma atividade)');
+  return head + note + (weekly ? '\n' + weekly : '') + meta + '\n' + (plan.items.length ? plan.items.map((i) => shortItem(i, statusOf(i))).join('\n') : '(nenhuma atividade)');
 }
 
 function overlaps(cfg, a) {
@@ -84,7 +105,7 @@ function overlaps(cfg, a) {
 /** Converte campos amigáveis (end, dias por nome) para o formato da configuração. */
 function activityPatch(args, base) {
   const out = {};
-  for (const k of ['title', 'subtitle', 'start', 'category', 'icon', 'priority', 'alertStart', 'alertAdvance', 'enabled']) {
+  for (const k of ['title', 'subtitle', 'start', 'category', 'icon', 'priority', 'alertStart', 'alertAdvance', 'track', 'enabled']) {
     if (args[k] !== undefined) out[k] = args[k];
   }
   if (args.duration !== undefined) out.duration = Number(args.duration);
@@ -110,6 +131,7 @@ const ACTIVITY_PROPS = {
   priority: { type: 'integer', description: '0 = normal; 10 = compromisso (prevalece sobre atividades simultâneas, ex.: igreja, futebol).' },
   alertStart: { type: 'boolean', description: 'Alerta sonoro no início.' },
   alertAdvance: { type: 'boolean', description: 'Aviso antecipado (minutos definidos em alterar_configuracoes).' },
+  track: { type: 'boolean', description: 'true = pede ✓/✗ (feito ou não) e conta na meta de produtividade.' },
   enabled: { type: 'boolean', description: 'false tira da rotina sem apagar.' }
 };
 
@@ -364,6 +386,65 @@ const TOOLS = [
       save(prev);
       return 'Última alteração desfeita.';
     }
+  },
+  {
+    name: 'registrar_conclusao',
+    description: 'Marca se o usuário fez (✓) ou não fez (✗) uma atividade que conta na meta, em um dia dos últimos 7 dias. Use só com a confirmação do usuário. status "limpar" apaga a marcação.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'id da atividade (veja ver_dia).' },
+        status: { type: 'string', enum: ['feito', 'nao_feito', 'limpar'] },
+        data: { type: 'string', description: 'AAAA-MM-DD, "hoje" (padrão) ou "ontem".' }
+      },
+      required: ['id', 'status']
+    },
+    run(a) {
+      const cfg = load();
+      const dateKey = engine.dateKey(parseDate(a.data));
+      const status = a.status === 'limpar' ? null : a.status === 'nao_feito' || a.status === 'nao-feito' ? 'nao-feito' : a.status === 'feito' ? 'feito' : fail('status deve ser feito, nao_feito ou limpar.');
+      const h = history();
+      try {
+        const item = h.setStatus(cfg, dateKey, a.id, status, 'agente', Date.now());
+        const day = h.day(dateKey, Date.now());
+        return item.title + ' (' + dateKey + '): ' + (status ? STATUS_LABEL[status] : 'marcação removida') + '. Dia: ' + day.feitos + ' de ' + day.total + ' feitas (' + pct(day.taxa) + ', meta ' + cfg.settings.checkin.goal + '%).';
+      } catch (err) {
+        return fail(err.message);
+      }
+    }
+  },
+  {
+    name: 'ver_relatorio',
+    description: 'Relatório de produtividade: % de atividades feitas contra a meta (padrão 70%), por dia, por categoria, as mais puladas e a sequência de dias na meta. Atividades sem resposta contam como não feitas.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        periodo: { type: 'string', enum: ['semana', 'semana-passada', 'mes', '30dias'], description: 'Padrão: semana (de segunda até hoje).' },
+        de: { type: 'string', description: 'Início AAAA-MM-DD (alternativa ao período).' },
+        ate: { type: 'string', description: 'Fim AAAA-MM-DD.' }
+      }
+    },
+    run(a) {
+      const now = Date.now();
+      const [from, to] = a.de ? [engine.dateKey(parseDate(a.de)), engine.dateKey(parseDate(a.ate || 'hoje'))] : periodRange(a.periodo || 'semana', now);
+      const g = goal();
+      const r = history().report(from, to, now, g);
+      if (!r.diasComDados) return 'Sem registros entre ' + from + ' e ' + to + '. O histórico começa a ser gravado quando o app está aberto no dia.';
+      const lines = [
+        'Período ' + from + ' a ' + to + ': ' + r.feitos + ' de ' + r.total + ' feitas = ' + pct(r.taxa) + ' (meta ' + g + '%) — ' + (r.taxa >= g / 100 ? 'na meta' : 'abaixo da meta'),
+        'Dias na meta: ' + r.diasNaMeta + ' de ' + r.diasComDados + ' · sequência atual: ' + r.sequencia + ' dia(s)',
+        '',
+        'Por dia:',
+        ...r.dias.map((d) => '  ' + d.dateKey + ' ' + engine.WEEKDAY_SHORT[d.weekday] + ': ' + d.feitos + '/' + d.total + ' = ' + pct(d.taxa) + (d.bateuMeta ? ' ✓' : '') + (d.pendentes ? ' (' + d.pendentes + ' para marcar)' : '')),
+        '',
+        'Por categoria:',
+        ...r.categorias.map((c) => '  ' + c.nome + ': ' + c.feitos + '/' + c.total + ' = ' + pct(c.taxa)),
+        '',
+        'Atividades (das mais puladas para as mais feitas):',
+        ...r.atividades.map((x) => '  ' + x.titulo + ' [' + x.id + ']: ' + x.feitos + '/' + x.total + ' = ' + pct(x.taxa))
+      ];
+      return lines.join('\n');
+    }
   }
 ];
 
@@ -372,7 +453,8 @@ const INSTRUCTIONS = [
   'Modelo: atividades semanais (id, start HH:MM, duration em minutos, days 0=domingo…6=sábado, category define a cor, priority 10 = compromisso que prevalece em sobreposições).',
   'Tarefas fixas por dia da semana (casa, nota, projeto) entram nas atividades via {casa}/{projeto}/{nota}.',
   'Para mudar só uma data (feriado, consulta, viagem) use salvar_excecao em vez de mexer na rotina semanal.',
-  'Antes de alterar, consulte ver_dia/listar_atividades para obter ids. Toda alteração pode ser revertida com desfazer_ultima_alteracao.'
+  'Antes de alterar, consulte ver_dia/listar_atividades para obter ids. Toda alteração pode ser revertida com desfazer_ultima_alteracao.',
+  'Produtividade: atividades com "conta na meta" recebem ✓ feito / ✗ não feito (registrar_conclusao, só com confirmação do usuário). Sem resposta conta como não feito. ver_relatorio mostra o % contra a meta (padrão 70%).'
 ].join('\n');
 
 async function callTool(name, args) {

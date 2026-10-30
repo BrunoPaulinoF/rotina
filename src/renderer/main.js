@@ -24,7 +24,9 @@
     closeModal,
     hydrateIcons,
     showView,
-    renderSettings: () => {}
+    renderSettings: () => {},
+    renderReport: () => {},
+    hist: null
   });
 
   function hydrateIcons(root) {
@@ -82,11 +84,12 @@
 
   // ---------- navegação ----------
   function showView(view) {
-    if (!['hoje', 'semana', 'regras', 'config'].includes(view)) view = 'hoje';
+    if (!['hoje', 'semana', 'relatorios', 'regras', 'config'].includes(view)) view = 'hoje';
     App.view = view;
     document.querySelectorAll('#tabs button').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
     document.querySelectorAll('.view').forEach((v) => v.classList.toggle('active', v.id === 'view-' + view));
     if (view === 'semana') renderWeek();
+    if (view === 'relatorios') App.renderReport();
     if (view === 'regras') renderRules();
     if (view === 'config') App.renderSettings();
   }
@@ -238,15 +241,82 @@
     }
   }
 
+  // Placar real do dia: atividades feitas sobre as que já deviam ter acontecido.
+  let histSig = '';
   function renderMeta(s) {
     $('#meta-text').textContent = App.config.meta;
-    const items = App.plan && App.plan.dateKey === s.dateKey ? App.plan.items : null;
-    if (!items) return;
-    const done = items.filter((i) => i.end <= s.now).length;
-    const pct = items.length ? Math.round((done / items.length) * 100) : 0;
-    $('#meta-bar').style.width = pct + '%';
-    $('#meta-count').textContent = 'Hoje: ' + done + ' de ' + items.length + ' blocos';
+    const c = s.checkin || {};
+    const t = c.today;
+    $('#meta-bar-wrap').style.setProperty('--goal', (c.goal || 70) + '%');
+    const pct = t && t.total ? Math.round(t.taxa * 100) : 0;
+    const bar = $('#meta-bar');
+    bar.style.width = pct + '%';
+    bar.classList.toggle('below', !!(t && t.total && pct < c.goal));
+    $('#meta-count').textContent = !c.enabled ? 'Registro desligado' : t && t.total ? 'Hoje: ' + t.feitos + ' de ' + t.total + ' (' + pct + '%)' : 'Hoje: nada para contar ainda';
+    const pend = $('#meta-pending');
+    pend.classList.toggle('hidden', !c.pending);
+    pend.textContent = c.pending ? c.pending + (c.pending === 1 ? ' atividade sem resposta — marcar agora' : ' atividades sem resposta — marcar agora') : '';
+    // Recarrega as marcações da linha do tempo quando o placar de hoje muda.
+    const sig = t ? [t.feitos, t.naoFeitos, t.pendentes, t.futuros].join('|') : '';
+    if (sig !== histSig) {
+      histSig = sig;
+      if (App.viewDate === s.dateKey) loadHist().then(paintMarks);
+    } else if (Math.floor(s.now / 60000) !== lastMarkMinute) {
+      // Botões aparecem quando a atividade começa.
+      lastMarkMinute = Math.floor(s.now / 60000);
+      paintMarks();
+    }
   }
+  let lastMarkMinute = 0;
+
+  $('#meta-pending').addEventListener('click', () => api.action('checkin:summary'));
+
+  // ---------- ✓/✗ na linha do tempo ----------
+  async function loadHist() {
+    App.hist = await api.action('history:day', { dateKey: App.viewDate });
+    return App.hist;
+  }
+
+  const MARK_TITLES = { feito: 'Feito', 'nao-feito': 'Não feito', pendente: 'Sem resposta — conta como não feito se ficar assim', 'sem-resposta': 'Ficou sem resposta (contou como não feito)', pausado: 'Rotina pausada — fora da meta', futuro: 'Ainda não começou' };
+
+  function paintMarks() {
+    const byKey = new Map(((App.hist && App.hist.itens) || []).map((i) => [i.key, i]));
+    document.querySelectorAll('#timeline .tl-item').forEach((li) => {
+      const box = li.querySelector('.ck');
+      if (!box) return;
+      const h = byKey.get(li.dataset.key);
+      li.classList.remove('st-feito', 'st-nao-feito', 'st-pendente', 'st-sem-resposta');
+      if (!h) {
+        box.innerHTML = '';
+        return;
+      }
+      li.classList.add('st-' + h.status);
+      const started = h.startMs <= (App.status ? App.status.now : Date.now());
+      if (!h.editable || !started || h.status === 'pausado') {
+        box.innerHTML = h.status === 'feito' ? '<span class="ck-static yes">✓</span>' : h.status === 'nao-feito' || h.status === 'sem-resposta' ? '<span class="ck-static no">✗</span>' : '';
+        box.title = MARK_TITLES[h.status] || '';
+        return;
+      }
+      box.title = MARK_TITLES[h.status] || '';
+      box.innerHTML =
+        '<button class="ck-btn yes' + (h.status === 'feito' ? ' on' : '') + '" data-ck="feito" title="Fiz">✓</button>' +
+        '<button class="ck-btn no' + (h.status === 'nao-feito' ? ' on' : '') + '" data-ck="nao-feito" title="Não fiz">✗</button>';
+    });
+  }
+
+  $('#timeline').addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-ck]');
+    if (!b) return;
+    const li = b.closest('.tl-item');
+    const h = App.hist && App.hist.itens.find((i) => i.key === li.dataset.key);
+    if (!h) return;
+    // Clicar de novo na marcação atual apaga a marcação.
+    const status = h.status === b.dataset.ck ? null : b.dataset.ck;
+    const r = await api.action('checkin:set', { dateKey: App.viewDate, id: h.id, status, origem: 'app' });
+    if (!r.ok) return toast(r.error);
+    await loadHist();
+    paintMarks();
+  });
 
   // ---------- linha do tempo ----------
   function renderDayPicker() {
@@ -272,10 +342,13 @@
     loadDay();
   });
 
+  window.__loadDay = () => loadDay();
   async function loadDay() {
     App.plan = await api.getDayPlan(App.viewDate);
+    await loadHist();
     renderDayPicker();
     renderTimeline();
+    paintMarks();
     if (App.status) renderMeta(App.status);
   }
 
@@ -307,6 +380,7 @@
         (highlight ? '<span class="tl-tag">COMPROMISSO</span>' : '') +
         (overlapped ? '<span class="tl-tag">SIMULTÂNEO</span>' : '') +
         '<span class="tl-tag" data-now hidden>AGORA</span>' +
+        (it.track ? '<span class="ck"></span>' : '') +
         '<span class="tl-range">' + it.startLabel + '–' + it.endLabel + '</span>' +
         '<button class="tl-bell' + (bellOff ? ' off' : '') + '" data-bell="' + esc(it.id) + '" data-extra="' + (it.extra ? '1' : '') + '" title="' + (bellOff ? 'Alertas desativados — clique para ativar' : 'Clique para desativar os alertas desta atividade') + '">' + icon(bellOff ? 'bellOff' : 'bell', 16) + '</button>' +
         '</div>' +
@@ -539,6 +613,11 @@
     });
     api.on('alert', (a) => renderBanner(a));
     api.on('alert:dismiss', () => renderBanner(null));
+    api.on('history', async () => {
+      await loadHist();
+      paintMarks();
+      if (App.view === 'relatorios') App.renderReport();
+    });
     api.on('navigate', (v) => showView(v));
     const hash = location.hash.replace('#', '');
     if (hash) showView(hash);

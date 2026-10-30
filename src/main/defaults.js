@@ -124,6 +124,14 @@ function createDefaultConfig() {
         startWithWindows: true,
         closeToTray: true,
         autoUpdateCheck: true
+      },
+      // Registro de feito/não feito (✓/✗) e meta de produtividade
+      checkin: {
+        enabled: true,
+        goal: 70,
+        beforeMinutes: 5,
+        afterMinutes: 15,
+        summaryTimes: ['17:00', '21:30']
       }
     }
   };

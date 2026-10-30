@@ -9,6 +9,14 @@ Assistente visual de rotina pessoal para Windows 10/11. Mostra a atividade atual
 - **Janela flutuante:** pílula pequena, sempre acima das outras janelas, com a atividade atual e o tempo restante. Fica fixa em cima no centro (ou embaixo no centro, ou em um dos cantos — Configurações → Geral e backup → Posição na tela). Os botões abrir/ocultar ficam à direita; cliques no resto da pílula passam para o que está atrás.
 - **Configurações:** atividades, categorias e cores, alertas e sons, tarefas da semana, exceções de datas, regras/listas, inicialização com o Windows e backup.
 
+## Meta e produtividade (✓ fiz / ✗ não fiz)
+
+- Cada atividade marcada como **"conta na meta"** pede ✓/✗: na pílula (5 min antes do fim até 15 min depois), num cartão de resumo às 17:00 e 21:30 com o que ficou sem resposta, e na linha do tempo de "Hoje" (últimos 7 dias).
+- Por padrão contam hábitos e trabalho (acordar, caminhada, mensagens, focos, estudo, inglês, comercial, projetos, fechar o dia, casa, telas, cama, planejar, roupa, mercado). Ajuste em Configurações → **Meta e registro** ou no editor de cada atividade.
+- O que ficar sem resposta conta como **não feito**. Rotina pausada e dias livres ficam fora da conta.
+- O histórico (`historico.json`) guarda uma foto das atividades de cada dia: mudar a rotina depois não altera o passado.
+- A aba **Relatórios** mostra % contra a meta (padrão 70%), por dia, por categoria, as mais puladas e a sequência de dias na meta. Agentes usam `registrar_conclusao` e `ver_relatorio`.
+
 ## Agentes de IA (Claude Cowork, Claude Code, Cursor…)
 
 Em **Configurações → Agentes de IA**, copie o prompt e cole numa conversa com o agente. Ele escolhe o caminho que consegue usar e pede as permissões necessárias:
@@ -63,6 +71,7 @@ src/main/alerts.js     Disparo de alertas: tolerância, saltos de relógio, paus
 src/main/store.js      Persistência JSON atômica e validação da configuração
 src/main/defaults.js   Rotina inicial
 src/main/updater.js    Atualização pelo GitHub Releases
+src/main/history.js    Histórico de ✓/✗, meta e relatórios
 src/agent/             Ferramentas para agentes de IA: servidor MCP, linha de comando e ponte com o app
 src/main/inbox.js      Pasta de comunicação (pedidos/respostas) para agentes
 scripts/build-mcpb.js  Gera a extensão do Claude Desktop (build/RotinaDesktop.mcpb)
@@ -74,7 +83,7 @@ test/                  Testes (node:test)
 
 ## Dados
 
-Ficam em `%APPDATA%\Rotina Desktop\`: `config.json` (rotina e configurações), `state.json` (pausa, silêncio, alertas adiados, posição das janelas) e `rotina.log` (alertas disparados e erros). Arquivos corrompidos são preservados como `*.corrompido-<data>` e o app recomeça dos padrões.
+Ficam em `%APPDATA%\Rotina Desktop\`: `config.json` (rotina e configurações), `historico.json` (✓/✗ de cada dia), `state.json` (pausa, silêncio, alertas adiados, posição das janelas) e `rotina.log` (alertas disparados e erros). Arquivos corrompidos são preservados como `*.corrompido-<data>` e o app recomeça dos padrões.
 
 ## Regras de agendamento
 

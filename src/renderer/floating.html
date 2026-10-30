@@ -25,6 +25,13 @@
     .acts { display: flex; gap: 1px; margin-left: 2px; padding-left: 4px; border-left: 1px solid rgba(255, 255, 255, .3); }
     .acts button { border: 0; width: 22px; height: 22px; border-radius: 50%; background: transparent; color: #fff; display: grid; place-items: center; opacity: .85; }
     .acts button:hover { background: rgba(255, 255, 255, .28); opacity: 1; }
+    .ask { display: flex; align-items: center; gap: 4px; margin-left: 2px; padding-left: 7px; border-left: 1px solid rgba(255, 255, 255, .3); max-width: 190px; }
+    .ask[hidden] { display: none; }
+    .ask .q { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 12px; font-weight: 600; }
+    .ask button { border: 0; width: 24px; height: 22px; border-radius: 999px; display: grid; place-items: center; color: #fff; font-weight: 800; flex: none; }
+    .ask .yes { background: #1E9E62; }
+    .ask .no { background: #D93A4F; }
+    .ask button:hover { filter: brightness(1.15); box-shadow: 0 0 0 2px rgba(255, 255, 255, .6); }
     .flash { animation: flash 1s ease-in-out 6; }
     @keyframes flash { 50% { filter: brightness(1.35); box-shadow: inset 0 0 0 2px #fff; } }
   </style>
@@ -35,6 +42,7 @@
     <span class="t" id="t"></span>
     <span class="r" id="r"></span>
     <i class="bar" id="bar"></i>
+    <span class="ask" id="ask" hidden><span class="q" id="q"></span><button class="yes" id="yes" title="Fiz">✓</button><button class="no" id="no" title="Não fiz">✗</button></span>
     <span class="acts" id="acts"><button id="open" title="Abrir Rotina Desktop"></button><button id="close" title="Ocultar (reative pela bandeja)"></button></span>
   </div>
   <script src="../shared/engine.js"></script>

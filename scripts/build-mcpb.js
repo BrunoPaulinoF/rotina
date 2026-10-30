@@ -110,6 +110,7 @@ function build() {
     ['src/shared/engine.js', 'server/shared/engine.js'],
     ['src/main/store.js', 'server/main/store.js'],
     ['src/main/defaults.js', 'server/main/defaults.js'],
+    ['src/main/history.js', 'server/main/history.js'],
     ['assets/icon.png', 'icon.png']
   ];
   const entries = [

@@ -42,7 +42,7 @@
   };
 
   function render() {
-    const fn = { atividades: renderActivities, categorias: renderCategories, alertas: renderAlerts, semana: renderWeekly, excecoes: renderExceptions, listas: renderLists, agentes: renderAgents, geral: renderGeneral }[panel];
+    const fn = { atividades: renderActivities, categorias: renderCategories, meta: renderGoal, alertas: renderAlerts, semana: renderWeekly, excecoes: renderExceptions, listas: renderLists, agentes: renderAgents, geral: renderGeneral }[panel];
     fn();
     App.hydrateIcons(panelEl);
   }
@@ -69,9 +69,10 @@
           '<td class="act-time" style="width:120px">' + a.start + ' – ' + endLabel(a) + '<br><small style="font-family:var(--font);font-weight:500;color:var(--muted)">' + a.duration + ' min</small></td>' +
           '<td class="act-title"><strong>' + esc(a.title) + (a.priority > 0 ? ' <span class="chip" style="--c:' + cat.color + '">' + icon('star', 12) + 'prioridade</span>' : '') + '</strong><small>' + esc(cat.name) + (a.subtitle ? ' · ' + esc(a.subtitle) : '') + '</small></td>' +
           '<td style="width:200px"><div class="days">' + DAY_ORDER.map((d) => '<i class="' + (a.days.includes(d) ? 'on' : '') + '">' + E.WEEKDAY_SHORT[d].slice(0, 3) + '</i>').join('') + '</div></td>' +
-          '<td style="width:150px"><div class="bell-toggles">' +
+          '<td style="width:220px"><div class="bell-toggles">' +
           '<button class="mini-toggle ' + (a.alertStart ? 'on' : '') + '" data-toggle="alertStart" title="Alerta no início">' + icon(a.alertStart ? 'bell' : 'bellOff', 13) + 'Início</button>' +
           '<button class="mini-toggle ' + (a.alertAdvance ? 'on' : '') + '" data-toggle="alertAdvance" title="Aviso antecipado">' + icon('clock', 13) + 'Antes</button>' +
+          '<button class="mini-toggle ' + (a.track ? 'on' : '') + '" data-toggle="track" title="Conta na meta (pede ✓/✗)">' + icon('target', 13) + 'Meta</button>' +
           '</div></td></tr>';
       }).join('') +
       '</tbody></table>' +
@@ -106,7 +107,7 @@
     const isExtra = !!opts.extraDate;
     const a = activity
       ? JSON.parse(JSON.stringify(activity))
-      : { id: '', title: '', subtitle: '', start: '09:00', duration: 30, days: isExtra ? [] : [1, 2, 3, 4, 5], category: 'basico', icon: 'dot', priority: 0, alertStart: true, alertAdvance: true, enabled: true };
+      : { id: '', title: '', subtitle: '', start: '09:00', duration: 30, days: isExtra ? [] : [1, 2, 3, 4, 5], category: 'basico', icon: 'dot', priority: 0, alertStart: true, alertAdvance: true, track: true, enabled: true };
     const cats = App.config.categories;
 
     const m = App.openModal(
@@ -123,6 +124,7 @@
       '<div class="field full">' +
       row('Alerta no início', 'Som e notificação quando a atividade começar.', sw('name="alertStart"', a.alertStart)) +
       row('Aviso antecipado', 'Usa os minutos configurados em "Alertas e sons".', sw('name="alertAdvance"', a.alertAdvance)) +
+      row('Conta na meta', 'Pede ✓ (fiz) ou ✗ (não fiz) perto do fim e entra no % de produtividade.', sw('name="track"', a.track)) +
       (isExtra ? '' : row('Atividade ativa', 'Desative para tirar da rotina sem apagar.', sw('name="enabled"', a.enabled))) +
       '</div>' +
       '<div class="field full preview-bar"><span>Pré-visualização</span><div data-preview></div><small data-overlap></small></div>' +
@@ -147,6 +149,7 @@
       priority: Number(f('priority').value),
       alertStart: f('alertStart').checked,
       alertAdvance: f('alertAdvance').checked,
+      track: f('track').checked,
       enabled: isExtra ? true : f('enabled').checked
     });
 
@@ -482,6 +485,38 @@
       App.commit((c) => { c.lists[t.dataset.list] = items; });
     }));
     panelEl.querySelector('[data-meta]').addEventListener('change', (e) => App.commit((c) => { c.meta = e.target.value.trim(); }));
+  }
+
+  // =============== META E REGISTRO (✓/✗) ===============
+  function renderGoal() {
+    const c = App.config.settings.checkin;
+    const tracked = App.config.activities.filter((a) => a.enabled && a.track);
+    const notTracked = App.config.activities.filter((a) => a.enabled && !a.track);
+    const chip = (a, on) => '<button class="mini-toggle' + (on ? ' on' : '') + '" data-track="' + esc(a.id) + '" title="' + (on ? 'Conta na meta — clique para tirar' : 'Não conta — clique para contar') + '">' + icon(on ? 'check' : 'plus', 12) + esc(a.title) + ' <small style="font-weight:500">' + a.start + '</small></button>';
+    panelEl.innerHTML =
+      head('Meta e registro', 'Marque ✓ (fiz) ou ✗ (não fiz) nas atividades. Isso alimenta a meta do dia e os relatórios.', '<button class="btn" id="open-report">' + icon('target', 16) + 'Ver relatórios</button>') +
+      '<div class="panel-body">' +
+      '<div class="section-title">Registro</div>' +
+      row('Perguntar se fiz cada atividade', 'A pílula mostra ✓/✗ perto do fim de cada atividade que conta na meta. Também dá para marcar na linha do tempo de "Hoje", nos últimos 7 dias.', sw('data-c="enabled"', c.enabled)) +
+      row('Meta diária', 'Porcentagem de atividades feitas para o dia "bater a meta". O que ficar sem resposta conta como não feito.', '<input type="number" min="1" max="100" value="' + c.goal + '" data-c="goal"> %') +
+      row('Começar a perguntar', 'Minutos antes do fim da atividade.', '<input type="number" min="0" max="60" value="' + c.beforeMinutes + '" data-c="beforeMinutes"> min antes') +
+      row('Continuar perguntando', 'Minutos depois do fim (na pílula). Depois disso, a atividade fica para o resumo.', '<input type="number" min="1" max="180" value="' + c.afterMinutes + '" data-c="afterMinutes"> min depois') +
+      row('Resumo do que ficou sem resposta', 'Horários em que aparece o cartão para marcar tudo de uma vez (separe por vírgula).', '<input class="input" type="text" style="width:160px" value="' + esc(c.summaryTimes.join(', ')) + '" data-c="summaryTimes" placeholder="17:00, 21:30">') +
+      '<div class="section-title">Contam na meta (' + tracked.length + ')</div>' +
+      '<div class="track-chips">' + (tracked.map((a) => chip(a, true)).join('') || '<span class="muted-p">Nenhuma.</span>') + '</div>' +
+      '<div class="section-title">Não contam (' + notTracked.length + ')</div>' +
+      '<div class="track-chips">' + (notTracked.map((a) => chip(a, false)).join('') || '<span class="muted-p">Todas contam.</span>') + '</div>' +
+      '<p class="info-box" style="margin-top:16px">Rotina pausada e dias livres (exceções) ficam fora da conta. Mudar a rotina não altera o histórico dos dias que já passaram.</p>' +
+      '</div>';
+    panelEl.querySelector('#open-report').onclick = () => window.__showReport();
+    panelEl.querySelectorAll('[data-c]').forEach((t) => t.addEventListener('change', () => App.commit((cfg) => {
+      const k = t.dataset.c;
+      cfg.settings.checkin[k] = t.type === 'checkbox' ? t.checked : k === 'summaryTimes' ? t.value.split(/[,;\s]+/).filter(Boolean) : Number(t.value);
+    }, { rerender: true })));
+    panelEl.querySelectorAll('[data-track]').forEach((b) => (b.onclick = () => App.commit((cfg) => {
+      const a = cfg.activities.find((x) => x.id === b.dataset.track);
+      a.track = !a.track;
+    }, { rerender: true, msg: 'Meta atualizada' })));
   }
 
   // =============== AGENTES DE IA ===============
