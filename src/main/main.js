@@ -4,7 +4,7 @@
  * O motor roda aqui (não nas janelas), então os alertas continuam com tudo minimizado ou fechado na bandeja.
  */
 
-const { app, BrowserWindow, ipcMain, Tray, Menu, Notification, screen, powerMonitor, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, Notification, screen, powerMonitor, dialog, shell, clipboard, net } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
@@ -12,6 +12,7 @@ const engine = require('../shared/engine');
 const { createDefaultConfig } = require('./defaults');
 const { JsonStore, normalizeConfig, normalizeState } = require('./store');
 const { AlertService } = require('./alerts');
+const { Updater } = require('./updater');
 
 const APP_ID = 'com.rotinadesktop.app';
 const ROOT = path.join(__dirname, '..', '..');
@@ -95,13 +96,174 @@ function saveStateNow() {
   }
 }
 
+let lastConfigText = '';
+
 function setConfig(next) {
   config = normalizeConfig(next);
   configStore.save(config);
+  lastConfigText = JSON.stringify(config);
   applySettings();
   broadcast('config', config);
   pushStatus(true);
   return config;
+}
+
+/**
+ * Agentes de IA (MCP, linha de comando ou edição direta do config.json) alteram o arquivo
+ * com o app aberto: observa a pasta e recarrega, validando como qualquer outra alteração.
+ */
+function watchConfigFile() {
+  const dir = path.dirname(configStore.file);
+  lastConfigText = JSON.stringify(config);
+  let timer = null;
+  const reload = () => {
+    const raw = configStore.load();
+    if (!raw) return;
+    const text = JSON.stringify(normalizeConfig(raw));
+    if (text === lastConfigText) return;
+    log('Rotina alterada fora do app (agente ou edição do arquivo); recarregada.');
+    setConfig(raw);
+  };
+  try {
+    fs.watch(dir, (_event, name) => {
+      if (name && name !== 'config.json') return;
+      clearTimeout(timer);
+      timer = setTimeout(reload, 300);
+    });
+  } catch (err) {
+    log('Não foi possível observar o config.json: ' + err.message);
+  }
+}
+
+// ---------- atualizações ----------
+let updater = null;
+let updateNotifiedVersion = null;
+
+function setupUpdater() {
+  updater = new Updater({
+    fetch: (url, opts) => net.fetch(url, opts),
+    currentVersion: app.getVersion(),
+    log,
+    onState: (s) => {
+      broadcast('update', s);
+      rebuildTrayMenu();
+      if (s.status === 'available' && s.latest !== updateNotifiedVersion && Notification.isSupported()) {
+        updateNotifiedVersion = s.latest;
+        const n = new Notification({ title: 'Rotina Desktop ' + s.latest + ' disponível', body: 'Clique para ver e atualizar. Suas configurações são mantidas.', icon: path.join(ASSETS, 'icon.png'), silent: true });
+        notifications.add(n);
+        n.on('click', () => showMain('config'));
+        n.show();
+      }
+    }
+  });
+  const auto = () => {
+    if (config.settings.general.autoUpdateCheck && app.isPackaged) updater.check();
+  };
+  setTimeout(auto, 30 * 1000);
+  setInterval(auto, 12 * 60 * 60 * 1000);
+}
+
+// ---------- agentes de IA ----------
+// O servidor MCP/CLI roda pelo próprio executável em modo Node (não exige Node instalado).
+function agentInfo() {
+  const server = app.isPackaged
+    ? path.join(process.resourcesPath, 'app.asar', 'src', 'agent', 'server.js')
+    : path.join(ROOT, 'src', 'agent', 'server.js');
+  const command = process.execPath;
+  const env = { ELECTRON_RUN_AS_NODE: '1' };
+  if (dataDirArg) env.ROTINA_DATA_DIR = app.getPath('userData');
+  const envFlags = Object.entries(env).map(([k, v]) => '-e ' + k + '=' + (v.includes(' ') ? '"' + v + '"' : v)).join(' ');
+  return {
+    command,
+    server,
+    dataDir: app.getPath('userData'),
+    configFile: path.join(app.getPath('userData'), 'config.json'),
+    guideFile: path.join(app.getPath('userData'), 'AGENTES.md'),
+    mcpJson: JSON.stringify({ mcpServers: { rotina: { command, args: [server], env } } }, null, 2),
+    claudeCode: 'claude mcp add rotina --scope user ' + envFlags + ' -- "' + command + '" "' + server + '"',
+    cli: '$env:ELECTRON_RUN_AS_NODE=1; & "' + command + '" "' + server + '" --cli ajuda',
+    claudeDesktopConfigs: claudeDesktopConfigPaths()
+  };
+}
+
+/** Pastas de configuração do Claude Desktop (instalação clássica e da Microsoft Store). */
+function claudeDesktopConfigPaths() {
+  const out = [];
+  const pkgs = path.join(process.env.LOCALAPPDATA || '', 'Packages');
+  try {
+    for (const d of fs.readdirSync(pkgs)) {
+      const dir = path.join(pkgs, d, 'LocalCache', 'Roaming', 'Claude');
+      if (/^Claude_/i.test(d) && fs.existsSync(dir)) out.push(path.join(dir, 'claude_desktop_config.json'));
+    }
+  } catch (_) { /* sem pasta de pacotes */ }
+  const classic = path.join(process.env.APPDATA || '', 'Claude');
+  if (fs.existsSync(classic)) out.push(path.join(classic, 'claude_desktop_config.json'));
+  return out;
+}
+
+/** Adiciona (ou atualiza) o servidor "rotina" no claude_desktop_config.json, preservando o resto. */
+function installClaudeDesktop() {
+  const info = agentInfo();
+  const entry = JSON.parse(info.mcpJson).mcpServers.rotina;
+  const written = [];
+  for (const file of info.claudeDesktopConfigs) {
+    let cfg = {};
+    if (fs.existsSync(file)) {
+      try {
+        cfg = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^﻿/, ''));
+      } catch (err) {
+        throw new Error('Não consegui ler ' + file + ' (JSON inválido). Corrija ou apague o arquivo e tente de novo.');
+      }
+      fs.copyFileSync(file, file + '.antes-rotina');
+    }
+    cfg.mcpServers = Object.assign({}, cfg.mcpServers, { rotina: entry });
+    fs.writeFileSync(file, JSON.stringify(cfg, null, 2), 'utf8');
+    written.push(file);
+  }
+  log('Servidor MCP registrado no Claude Desktop: ' + written.join(', '));
+  return written;
+}
+
+/** Guia para agentes que trabalham editando arquivos (sem MCP). Regerado a cada início. */
+function writeAgentGuide() {
+  const info = agentInfo();
+  const text = [
+    '# Rotina Desktop — guia para agentes de IA',
+    '',
+    'Este arquivo descreve como ler e alterar a rotina do usuário. Ele é regerado pelo app; não edite.',
+    '',
+    '## Opção 1 — MCP (recomendado)',
+    'Configuração para clientes MCP (Claude Desktop/Cowork, Cursor etc.):',
+    '```json',
+    info.mcpJson,
+    '```',
+    'Claude Code: `' + info.claudeCode + '`',
+    '',
+    '## Opção 2 — linha de comando (PowerShell)',
+    '```powershell',
+    info.cli,
+    '$env:ELECTRON_RUN_AS_NODE=1; & "' + info.command + '" "' + info.server + '" --cli ver_dia data=amanha',
+    '$env:ELECTRON_RUN_AS_NODE=1; & "' + info.command + '" "' + info.server + '" --cli salvar_atividade title="Academia" start=19:00 end=20:00 days=seg,qua category=corpo icon=dumbbell',
+    '$env:ELECTRON_RUN_AS_NODE=1; & "' + info.command + '" "' + info.server + '" --cli salvar_excecao data=2026-12-25 tipo=livre nota="Natal"',
+    '```',
+    '',
+    '## Opção 3 — editar o arquivo diretamente',
+    'Arquivo: `' + info.configFile + '` (JSON, UTF-8). O app aberto recarrega sozinho ao salvar e corrige/descarta campos inválidos.',
+    '',
+    '- `activities[]`: `{ id, title, subtitle, start: "HH:MM", duration: minutos, days: [0-6] (0 = domingo), category: id de categories[], icon, priority: 0 | 10 (compromisso prevalece em sobreposições), alertStart, alertAdvance, enabled }`',
+    '- `subtitle` aceita `{casa}`, `{projeto}` e `{nota}`, preenchidos por `weekly[diaDaSemana]`.',
+    '- `weekly[0..6]`: `{ casa, nota, projeto }` por dia da semana (0 = domingo).',
+    '- `exceptions[]`: `{ date: "AAAA-MM-DD", note, off: dia livre, baseDay: usar rotina de outro dia (0-6) ou null, removedIds: [ids], extra: [atividades sem days] }`.',
+    '- `categories[]`: `{ id, name, color: "#RRGGBB", icon }`. `lists`: regras, sono, planejamento, lembretes, casaTodoDia. `meta`: texto.',
+    '- `settings.alerts`, `settings.floating`, `settings.general`: alertas, janela flutuante e inicialização.',
+    '',
+    'Faça uma cópia antes de grandes mudanças. As ferramentas MCP/CLI guardam a versão anterior em `config.anterior.json`.'
+  ].join('\n');
+  try {
+    fs.writeFileSync(info.guideFile, text, 'utf8');
+  } catch (err) {
+    log('Não foi possível gravar AGENTES.md: ' + err.message);
+  }
 }
 
 // ---------- status ----------
@@ -164,8 +326,8 @@ function deliverAlert(alert) {
     setTimeout(() => notifications.delete(n), 5 * 60000);
     n.show();
   }
-  const floatingVisible = floatingWindow && !floatingWindow.isDestroyed() && floatingWindow.isVisible();
-  if (a.popup && !floatingVisible) showPopup(activeAlert);
+  // A pílula é pequena demais para botões: o aviso com "Adiar" vai sempre no cartão.
+  if (a.popup) showPopup(activeAlert);
   broadcast('alert', activeAlert);
   pushStatus(true);
 }
@@ -291,25 +453,38 @@ function showMain(view) {
   }
 }
 
-function defaultFloatingBounds() {
+// Pílula compacta: só a atividade atual e o tempo restante.
+const FLOAT_W = 250;
+const FLOAT_H = 30;
+
+function topCenterBounds() {
   const wa = screen.getPrimaryDisplay().workArea;
-  const width = 320;
-  const height = 176;
-  return { x: wa.x + wa.width - width - 16, y: wa.y + 16, width, height };
+  return { x: Math.round(wa.x + (wa.width - FLOAT_W) / 2), y: wa.y + 4, width: FLOAT_W, height: FLOAT_H };
 }
 
+function floatingBounds() {
+  const saved = state.floatingBounds;
+  if (config.settings.floating.fixedTop || !saved) return topCenterBounds();
+  const b = { x: saved.x, y: saved.y, width: FLOAT_W, height: FLOAT_H };
+  return boundsVisible(b) ? b : topCenterBounds();
+}
+
+let floatingFixed = null;
+
 function createFloatingWindow() {
-  const b = boundsVisible(state.floatingBounds) ? state.floatingBounds : defaultFloatingBounds();
   const f = config.settings.floating;
+  const b = floatingBounds();
+  floatingFixed = f.fixedTop;
   floatingWindow = new BrowserWindow({
     x: b.x,
     y: b.y,
-    width: b.width,
-    height: b.height,
-    minWidth: 220,
-    minHeight: 104,
+    width: FLOAT_W,
+    height: FLOAT_H,
     frame: false,
-    resizable: true,
+    transparent: true,
+    hasShadow: false,
+    resizable: false,
+    movable: !f.fixedTop,
     maximizable: false,
     minimizable: false,
     fullscreenable: false,
@@ -317,17 +492,18 @@ function createFloatingWindow() {
     alwaysOnTop: f.alwaysOnTop,
     show: false,
     title: 'Rotina Desktop — mini',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#00000000',
     icon: path.join(ASSETS, 'icon.ico'),
     webPreferences: webPrefs()
   });
   if (f.alwaysOnTop) floatingWindow.setAlwaysOnTop(true, 'floating');
   floatingWindow.setOpacity(f.opacity);
-  floatingWindow.loadFile(path.join(RENDERER, 'floating.html'));
+  floatingWindow.loadFile(path.join(RENDERER, 'floating.html'), { query: { fixed: f.fixedTop ? '1' : '0' } });
   // showInactive: aparece sem roubar o foco do que você está usando.
   floatingWindow.once('ready-to-show', () => floatingWindow.showInactive());
   let boundsTimer = null;
   const remember = () => {
+    if (config.settings.floating.fixedTop) return;
     clearTimeout(boundsTimer);
     boundsTimer = setTimeout(() => {
       if (floatingWindow && !floatingWindow.isDestroyed()) {
@@ -337,7 +513,6 @@ function createFloatingWindow() {
     }, 500);
   };
   floatingWindow.on('move', remember);
-  floatingWindow.on('resize', remember);
   floatingWindow.on('closed', () => {
     floatingWindow = null;
     rebuildTrayMenu();
@@ -401,6 +576,8 @@ function closePopup() {
 // ---------- configurações aplicadas ----------
 function applySettings() {
   const f = config.settings.floating;
+  // Trocar entre fixo e livre muda se a janela pode ser movida: recria.
+  if (floatingWindow && !floatingWindow.isDestroyed() && floatingFixed !== f.fixedTop) floatingWindow.destroy();
   if (f.enabled && !floatingWindow) createFloatingWindow();
   if (!f.enabled && floatingWindow && !floatingWindow.isDestroyed()) floatingWindow.destroy();
   if (floatingWindow && !floatingWindow.isDestroyed()) {
@@ -508,6 +685,9 @@ function rebuildTrayMenu() {
       submenu: [5, 10, 15, 30].map((m) => ({ label: m + ' minutos', click: () => snooze(m) }))
     },
     { type: 'separator' },
+    updater && updater.state.status === 'available'
+      ? { label: 'Atualizar para a versão ' + updater.state.latest + '…', click: () => showMain('config') }
+      : { label: 'Verificar atualizações', click: () => { showMain('config'); updater && updater.check(); } },
     { label: 'Configurações', click: () => showMain('config') },
     { label: 'Sair', click: () => app.quit() }
   ]));
@@ -608,6 +788,20 @@ function registerIpc() {
         return setConfig(createDefaultConfig());
       }
       case 'openDataFolder': return shell.openPath(app.getPath('userData'));
+      case 'update:state': return updater.state;
+      case 'update:check': return updater.check();
+      case 'update:download': return updater.download();
+      case 'update:install': return updater.install(() => app.quit());
+      case 'agent:info': return agentInfo();
+      case 'agent:installClaudeDesktop': {
+        try {
+          return { ok: true, files: installClaudeDesktop() };
+        } catch (err) {
+          return { ok: false, error: err.message };
+        }
+      }
+      case 'agent:openGuide': return shell.openPath(agentInfo().guideFile);
+      case 'copyText': return clipboard.writeText(String(p.text || ''));
       case 'quit': return app.quit();
       default: return null;
     }
@@ -629,7 +823,7 @@ async function runCapture(dir) {
     await wait(700);
     await shot(mainWindow, 'main-' + view);
   }
-  for (const panel of ['alertas', 'excecoes', 'geral']) {
+  for (const panel of ['alertas', 'excecoes', 'agentes', 'geral']) {
     await mainWindow.webContents.executeJavaScript('window.__showSettings && window.__showSettings(' + JSON.stringify(panel) + ')');
     await wait(500);
     log('Captura ' + panel + ': ' + (await mainWindow.webContents.executeJavaScript('(document.querySelector("#config-panel h2") || {}).textContent')));
@@ -676,15 +870,22 @@ if (!app.requestSingleInstanceLock()) {
     alerts.tick();
     scheduleTick();
 
+    watchConfigFile();
+    writeAgentGuide();
+    setupUpdater();
+
     powerMonitor.on('resume', () => {
       log('Sistema retomado da suspensão');
       alerts.resetClock();
       pushStatus(true);
     });
     powerMonitor.on('unlock-screen', () => pushStatus(true));
-    screen.on('display-removed', () => {
-      if (floatingWindow && !boundsVisible(floatingWindow.getBounds())) floatingWindow.setBounds(defaultFloatingBounds());
-    });
+    // Resolução, barra de tarefas ou monitores mudaram: mantém a pílula no topo central (ou visível).
+    const reposition = () => {
+      if (floatingWindow && !floatingWindow.isDestroyed()) floatingWindow.setBounds(floatingBounds());
+    };
+    screen.on('display-removed', reposition);
+    screen.on('display-metrics-changed', reposition);
 
     if (captureDir && mainWindow) mainWindow.once('ready-to-show', () => runCapture(captureDir).catch((err) => log('Captura falhou: ' + err.stack)));
   });

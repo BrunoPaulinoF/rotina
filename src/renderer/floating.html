@@ -6,55 +6,40 @@
   <title>Rotina Desktop — mini</title>
   <link rel="stylesheet" href="base.css">
   <style>
-    html, body { background: #fff; overflow: hidden; }
-    body { -webkit-app-region: drag; display: flex; flex-direction: column; height: 100vh; border: 1px solid #D7E0EC; border-radius: 0; font-size: clamp(11px, 4.2vw, 22px); }
+    html, body { background: transparent; overflow: hidden; height: 100%; }
+    body { padding: 1px; }
+    body.free .pill { -webkit-app-region: drag; }
     button { -webkit-app-region: no-drag; }
-    .top { display: flex; align-items: center; gap: .5em; padding: .45em .6em .3em .75em; }
-    .clock { font-family: var(--display); font-weight: 700; color: var(--navy); font-size: 1.9em; line-height: 1; font-variant-numeric: tabular-nums; }
-    .clock small { font-size: .45em; color: var(--muted); margin-left: .15em; }
-    .day { color: var(--muted); font-size: .72em; font-weight: 600; line-height: 1.15; }
-    .grow { flex: 1; }
-    .ctl { border: 0; background: transparent; color: var(--muted); width: 1.9em; height: 1.9em; border-radius: .45em; display: grid; place-items: center; }
-    .ctl:hover { background: var(--pill); color: var(--navy); }
-    .ctl.on { color: var(--accent); }
-    .ctl svg { width: 1.05em; height: 1.05em; }
-    .now { --c: #7E93A8; margin: 0 .6em; border-radius: .7em; padding: .5em .7em; color: #fff; background: linear-gradient(120deg, var(--c), color-mix(in srgb, var(--c) 72%, #061633)); display: grid; grid-template-columns: auto 1fr auto; gap: .1em .6em; align-items: center; flex: 1; min-height: 0; position: relative; overflow: hidden; }
-    .now .ic svg { width: 1.6em; height: 1.6em; }
-    .now .t { font-weight: 700; font-size: 1em; line-height: 1.15; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-    .now .r { grid-column: 2; font-size: .72em; opacity: .9; }
-    .now .left { grid-row: span 2; grid-column: 3; text-align: right; }
-    .now .left strong { display: block; font-family: var(--display); font-size: 1.35em; line-height: 1; font-variant-numeric: tabular-nums; }
-    .now .left small { font-size: .6em; font-weight: 700; letter-spacing: .06em; opacity: .85; }
-    .now .ic { grid-row: span 2; }
-    .bar { position: absolute; left: 0; bottom: 0; height: .22em; background: #fff; opacity: .85; transition: width 1s linear; }
-    .next { display: flex; align-items: center; gap: .45em; padding: .35em .75em .45em; color: var(--muted); font-size: .76em; white-space: nowrap; overflow: hidden; }
-    .next b { color: var(--ink); overflow: hidden; text-overflow: ellipsis; }
-    .next .cnt { margin-left: auto; font-weight: 700; color: var(--navy); font-variant-numeric: tabular-nums; }
-    .next svg { width: 1.1em; height: 1.1em; flex: none; }
-    .paused { position: absolute; inset: 0; display: grid; place-items: center; }
-    .alert { position: fixed; inset: 0; z-index: 5; --c: var(--accent); background: linear-gradient(120deg, var(--c), color-mix(in srgb, var(--c) 70%, #061633)); color: #fff; display: flex; flex-direction: column; justify-content: center; gap: .35em; padding: .6em .8em; animation: pop .3s ease-out; }
-    @keyframes pop { from { transform: scale(.96); opacity: 0; } }
-    .alert strong { font-size: 1.05em; line-height: 1.2; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-    .alert small { font-size: .72em; opacity: .9; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-    .alert .acts { display: flex; gap: .4em; margin-top: .2em; }
-    .alert .acts button { flex: 1; height: 2em; border-radius: .5em; border: 1px solid rgba(255,255,255,.4); background: rgba(255,255,255,.16); color: #fff; font-weight: 700; font-size: .8em; }
-    .alert .acts button:hover { background: rgba(255,255,255,.3); }
-    .state { font-size: .66em; font-weight: 700; color: #8A4B00; background: #FFF4E5; border-radius: 1em; padding: .1em .6em; }
+    .pill {
+      --c: #7E93A8;
+      position: relative; overflow: hidden;
+      height: 100%; border-radius: 999px;
+      display: flex; align-items: center; gap: 7px;
+      padding: 0 12px 0 10px;
+      background: linear-gradient(100deg, var(--c), color-mix(in srgb, var(--c) 72%, #061633));
+      color: #fff; font-size: 12.5px; white-space: nowrap;
+      border: 1px solid rgba(255, 255, 255, .35);
+    }
+    .ic { display: grid; place-items: center; opacity: .95; }
+    .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+    .r { font-family: var(--display); font-weight: 700; font-size: 14px; font-variant-numeric: tabular-nums; }
+    .bar { position: absolute; left: 0; bottom: 0; height: 2px; background: rgba(255, 255, 255, .85); transition: width 1s linear; }
+    .acts { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); display: none; gap: 2px; background: color-mix(in srgb, var(--c) 80%, #061633); border-radius: 999px; padding: 2px; }
+    .pill:hover .acts { display: flex; }
+    .acts button { border: 0; width: 22px; height: 22px; border-radius: 50%; background: transparent; color: #fff; display: grid; place-items: center; }
+    .acts button:hover { background: rgba(255, 255, 255, .25); }
+    .flash { animation: flash 1s ease-in-out 6; }
+    @keyframes flash { 50% { filter: brightness(1.35); box-shadow: inset 0 0 0 2px #fff; } }
   </style>
 </head>
 <body>
-  <div class="top">
-    <div class="clock" id="clock">--:--</div>
-    <div class="day" id="day"></div>
-    <span class="state hidden" id="state"></span>
-    <span class="grow"></span>
-    <button class="ctl" id="pin" title="Sempre visível"></button>
-    <button class="ctl" id="open" title="Abrir Rotina Desktop"></button>
-    <button class="ctl" id="close" title="Ocultar janela flutuante"></button>
+  <div class="pill" id="pill" title="Duplo clique abre a Rotina Desktop">
+    <span class="ic" id="ic"></span>
+    <span class="t" id="t"></span>
+    <span class="r" id="r"></span>
+    <i class="bar" id="bar"></i>
+    <span class="acts"><button id="open" title="Abrir Rotina Desktop"></button><button id="close" title="Ocultar (reative pela bandeja)"></button></span>
   </div>
-  <div class="now" id="now"></div>
-  <div class="next" id="next"></div>
-  <div class="alert hidden" id="alert"></div>
   <script src="../shared/engine.js"></script>
   <script src="common.js"></script>
   <script src="floating.js"></script>

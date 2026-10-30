@@ -117,11 +117,13 @@ function createDefaultConfig() {
       floating: {
         enabled: true,
         alwaysOnTop: true,
-        opacity: 0.97
+        fixedTop: true,
+        opacity: 1
       },
       general: {
         startWithWindows: true,
-        closeToTray: true
+        closeToTray: true,
+        autoUpdateCheck: true
       }
     }
   };

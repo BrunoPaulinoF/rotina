@@ -350,6 +350,9 @@ main { flex: 1; min-height: 0; position: relative; }
 .extra-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; background: #fff; border: 1px solid var(--line); margin-bottom: 6px; }
 .extra-item .grow { flex: 1; }
 .lists-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.code-box { display: flex; gap: 10px; align-items: flex-start; background: #0F2D5C; border-radius: 10px; padding: 10px 10px 10px 14px; margin-bottom: 6px; }
+.code-box pre { flex: 1; margin: 0; color: #E6EEF9; font: 12px/1.5 Consolas, "Cascadia Mono", monospace; white-space: pre-wrap; word-break: break-all; user-select: text; }
+.code-box .btn { background: rgba(255, 255, 255, .12); border-color: rgba(255, 255, 255, .25); color: #fff; }
 .info-box { background: #F2F6FB; border-radius: 10px; padding: 12px 14px; color: var(--muted); font-size: 13px; line-height: 1.5; }
 .info-box code { background: #fff; padding: 1px 6px; border-radius: 5px; color: var(--navy); }
 

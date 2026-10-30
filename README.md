@@ -4,10 +4,31 @@ Assistente visual de rotina pessoal para Windows 10/11. Mostra a atividade atual
 
 ## Uso
 
-- **Instalar:** execute `dist/RotinaDesktop-Setup-1.0.0.exe` (gerado por `npm run dist`).
+- **Instalar:** baixe o instalador da [última release](https://github.com/BrunoPaulinoF/rotina/releases/latest) (ou gere com `npm run dist`).
 - **Bandeja do Windows:** fechar a janela mantém o app rodando (alertas continuam). Clique com o botão direito no ícone para pausar, silenciar, adiar o último alerta, abrir a janela flutuante ou sair.
-- **Janela flutuante:** arraste para mover, puxe a borda para redimensionar, use o alfinete para "sempre visível". Duplo clique abre a janela principal.
+- **Janela flutuante:** pílula pequena no topo central da tela com a atividade atual e o tempo restante. Duplo clique abre a janela principal; ao passar o mouse aparecem os botões abrir/ocultar. Para arrastar, desative "Fixar no topo central" em Configurações → Geral e backup.
 - **Configurações:** atividades, categorias e cores, alertas e sons, tarefas da semana, exceções de datas, regras/listas, inicialização com o Windows e backup.
+
+## Agentes de IA (Claude Cowork, Claude Code, Cursor…)
+
+O agente consegue consultar e alterar a rotina por três caminhos, todos com a mesma validação do app (que recarrega na hora):
+
+1. **MCP** — em Configurações → Agentes de IA: botão "Conectar ao Claude" (Claude Desktop/Cowork), comando pronto para o Claude Code e JSON para outros clientes. O servidor roda pelo próprio `RotinaDesktop.exe` (com `ELECTRON_RUN_AS_NODE=1`), sem precisar de Node.
+2. **Linha de comando** — `RotinaDesktop.exe <caminho>\app.asar\src\agent\server.js --cli ajuda`; argumentos como `chave=valor` (ex.: `--cli salvar_atividade title="Academia" start=19:00 end=20:00 days=seg,qua`).
+3. **Arquivo** — editar `%APPDATA%\Rotina Desktop\config.json`; o formato está em `AGENTES.md`, na mesma pasta.
+
+Ferramentas: `ver_agora`, `ver_dia`, `ver_semana`, `listar_atividades`, `salvar_atividade`, `remover_atividade`, `listar_categorias`, `salvar_categoria`, `remover_categoria`, `definir_dia_semana`, `salvar_excecao`, `remover_excecao`, `editar_lista`, `alterar_configuracoes`, `ler_configuracao`, `substituir_configuracao`, `desfazer_ultima_alteracao`.
+
+## Atualizações
+
+Em Configurações → Geral e backup → **Verificar atualizações**, o app consulta a última release do GitHub e, com um clique, baixa o instalador, confere o SHA-512 (`latest.yml`) e reinstala em silêncio, reabrindo sozinho. Rotina e configurações ficam em `%APPDATA%` e são mantidas.
+
+Para publicar uma versão nova:
+
+```bash
+# 1. aumente "version" no package.json, faça commit e push
+npm run release   # gera o instalador e cria a release vX.Y.Z no GitHub (requer gh autenticado)
+```
 
 ## Desenvolvimento
 
@@ -38,6 +59,8 @@ src/main/main.js       Processo principal: janelas, bandeja, alertas, IPC, autos
 src/main/alerts.js     Disparo de alertas: tolerância, saltos de relógio, pausa, silêncio, adiar
 src/main/store.js      Persistência JSON atômica e validação da configuração
 src/main/defaults.js   Rotina inicial
+src/main/updater.js    Atualização pelo GitHub Releases
+src/agent/             Ferramentas para agentes de IA: servidor MCP e linha de comando
 src/preload.js         Ponte segura entre janelas e processo principal
 src/renderer/          Interface (HTML/CSS/JS puro): principal, flutuante, cartão de alerta, áudio
 scripts/               Geração de ícones e verificação de sintaxe

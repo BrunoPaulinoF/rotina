@@ -42,7 +42,7 @@
   };
 
   function render() {
-    const fn = { atividades: renderActivities, categorias: renderCategories, alertas: renderAlerts, semana: renderWeekly, excecoes: renderExceptions, listas: renderLists, geral: renderGeneral }[panel];
+    const fn = { atividades: renderActivities, categorias: renderCategories, alertas: renderAlerts, semana: renderWeekly, excecoes: renderExceptions, listas: renderLists, agentes: renderAgents, geral: renderGeneral }[panel];
     fn();
     App.hydrateIcons(panelEl);
   }
@@ -302,7 +302,7 @@
 
       '<div class="section-title">Avisos visuais</div>' +
       row('Notificação do Windows', 'Aparece na central de notificações.', sw('data-a="windowsNotification"', a.windowsNotification)) +
-      row('Cartão de alerta com botão "Adiar"', 'Pequeno cartão no canto inferior direito, sem roubar o foco. Com a janela flutuante aberta, o aviso aparece nela.', sw('data-a="popup"', a.popup)) +
+      row('Cartão de alerta com botão "Adiar"', 'Pequeno cartão no canto inferior direito, sem roubar o foco. A janela flutuante também pisca.', sw('data-a="popup"', a.popup)) +
       row('Tempo do cartão na tela', '', '<input type="number" min="5" max="300" value="' + a.popupSeconds + '" data-a="popupSeconds"> s') +
       row('Adiar alerta por', 'Usado nos botões "Adiar".', '<input type="number" min="1" max="120" value="' + a.snoozeMinutes + '" data-a="snoozeMinutes"> min') +
       (s.snoozes.length ? '<div class="info-box">Alertas adiados: ' + s.snoozes.map((x) => esc(x.title) + ' às ' + UI.timeLabel(x.at)).join(' · ') + '</div>' : '') +
@@ -484,19 +484,98 @@
     panelEl.querySelector('[data-meta]').addEventListener('change', (e) => App.commit((c) => { c.meta = e.target.value.trim(); }));
   }
 
+  // =============== AGENTES DE IA ===============
+  async function renderAgents() {
+    const info = await api.action('agent:info');
+    if (panel !== 'agentes') return;
+    const code = (id, text) => '<div class="code-box"><pre>' + esc(text) + '</pre><button class="btn small" data-copy="' + id + '">' + icon('list', 14) + 'Copiar</button></div>';
+    const texts = {
+      json: info.mcpJson,
+      code: info.claudeCode,
+      cli: info.cli,
+      prompt: 'Minha rotina fica no app Rotina Desktop. Use as ferramentas do servidor MCP "rotina" (ou o guia em ' + info.guideFile + ') para consultar e alterar horários, atividades, exceções de datas e tarefas da semana. Antes de mudar, mostre o que vai alterar.'
+    };
+    const desktop = info.claudeDesktopConfigs.length
+      ? row('Claude Desktop / Cowork', 'Adiciona o servidor "rotina" em: ' + info.claudeDesktopConfigs.map(esc).join(' e ') + '. Depois, feche e abra o Claude Desktop.', '<button class="btn primary" id="install-desktop">' + icon('plus', 16) + 'Conectar ao Claude</button>')
+      : row('Claude Desktop / Cowork', 'Claude Desktop não encontrado neste computador. Use a configuração JSON abaixo no seu cliente.', '');
+
+    panelEl.innerHTML =
+      head('Agentes de IA', 'Deixe seu agente de IA (Claude Cowork, Claude Code, Cursor, ChatGPT com MCP…) consultar e alterar a rotina. As alterações aparecem aqui na hora.') +
+      '<div class="panel-body">' +
+      '<div class="section-title">Conexão rápida</div>' + desktop +
+      '<div class="section-title">Outros clientes MCP (configuração JSON)</div>' + code('json', texts.json) +
+      '<div class="section-title">Claude Code (terminal)</div>' + code('code', texts.code) +
+      '<div class="section-title">Agentes que usam linha de comando</div>' + code('cli', texts.cli) +
+      '<div class="section-title">Agentes que só editam arquivos</div>' +
+      row('Guia para agentes', esc(info.guideFile) + ' — explica o formato do config.json. O app recarrega o arquivo ao salvar.', '<button class="btn" id="open-guide">' + icon('book', 16) + 'Abrir guia</button>') +
+      '<div class="section-title">Sugestão de pedido para o agente</div>' + code('prompt', texts.prompt) +
+      '<p class="info-box">Ferramentas disponíveis: ver_agora, ver_dia, ver_semana, listar_atividades, salvar_atividade, remover_atividade, listar_categorias, salvar_categoria, remover_categoria, definir_dia_semana, salvar_excecao, remover_excecao, editar_lista, alterar_configuracoes, ler_configuracao, substituir_configuracao e desfazer_ultima_alteracao. Toda alteração passa pela mesma validação do app e pode ser desfeita.</p>' +
+      '</div>';
+    App.hydrateIcons(panelEl);
+    panelEl.querySelectorAll('[data-copy]').forEach((b) => (b.onclick = () => api.action('copyText', { text: texts[b.dataset.copy] }).then(() => App.toast('Copiado'))));
+    panelEl.querySelector('#open-guide').onclick = () => api.action('agent:openGuide');
+    const inst = panelEl.querySelector('#install-desktop');
+    if (inst) inst.onclick = async () => {
+      const r = await api.action('agent:installClaudeDesktop');
+      App.toast(r.ok ? 'Conectado! Reinicie o Claude Desktop.' : r.error);
+    };
+  }
+
+  // =============== ATUALIZAÇÕES ===============
+  function renderUpdateBox(s) {
+    const box = document.getElementById('update-box');
+    if (!box || !s) return;
+    const when = s.checkedAt ? ' Última verificação: ' + new Date(s.checkedAt).toLocaleString('pt-BR').slice(0, 17) + '.' : '';
+    const mb = s.size ? ' (' + Math.round(s.size / 1048576) + ' MB)' : '';
+    let desc = 'Versão instalada: ' + esc(s.current) + '.' + when;
+    let ctl = '<button class="btn" data-up="check">' + icon('rotate', 16) + 'Verificar atualizações</button>';
+    if (s.status === 'checking') {
+      desc = 'Procurando versão nova…';
+      ctl = '<button class="btn" disabled>' + icon('clock', 16) + 'Verificando…</button>';
+    } else if (s.status === 'none') {
+      desc = esc(s.message || 'Você já está na versão mais recente.') + ' Versão instalada: ' + esc(s.current) + '.' + when;
+    } else if (s.status === 'error') {
+      desc = esc(s.error);
+    } else if (s.status === 'available') {
+      desc = '<b>Versão ' + esc(s.latest) + ' disponível' + mb + '.</b> Suas configurações e sua rotina são mantidas.' + (s.notes ? '<br>' + esc(s.notes).slice(0, 400).replace(/\n/g, '<br>') : '');
+      ctl = '<button class="btn primary" data-up="download">' + icon('download', 16) + 'Baixar e atualizar</button>';
+    } else if (s.status === 'downloading') {
+      desc = 'Baixando versão ' + esc(s.latest) + '… ' + Math.round((s.progress || 0) * 100) + '%';
+      ctl = '<button class="btn" disabled>' + icon('download', 16) + Math.round((s.progress || 0) * 100) + '%</button>';
+    } else if (s.status === 'ready') {
+      desc = 'Versão ' + esc(s.latest) + ' baixada e verificada. O app fecha, atualiza e abre de novo sozinho (leva alguns segundos).';
+      ctl = '<button class="btn primary" data-up="install">' + icon('check', 16) + 'Reiniciar e atualizar</button>';
+    }
+    box.innerHTML = row('Rotina Desktop', desc, ctl);
+    App.hydrateIcons(box);
+    const b = box.querySelector('[data-up]');
+    if (b) b.onclick = () => {
+      const act = b.dataset.up;
+      if (act === 'download') api.action('update:download').then((r) => { if (r.status === 'ready') api.action('update:install'); });
+      else api.action('update:' + act);
+    };
+  }
+  api.on('update', (s) => {
+    if (panel === 'geral') renderUpdateBox(s);
+  });
+
   // =============== GERAL ===============
   async function renderGeneral() {
     const g = App.config.settings.general;
     const f = App.config.settings.floating;
     const info = await api.info();
     panelEl.innerHTML =
-      head('Geral e backup', 'Inicialização, janela flutuante e dados locais.') +
+      head('Geral e backup', 'Atualizações, inicialização, janela flutuante e dados locais.') +
       '<div class="panel-body">' +
+      '<div class="section-title">Atualizações</div>' +
+      '<div id="update-box"></div>' +
+      row('Verificar automaticamente', 'Procura versões novas ao abrir e a cada 12 horas (só avisa; você decide quando instalar).', sw('data-g="autoUpdateCheck"', g.autoUpdateCheck)) +
       '<div class="section-title">Inicialização</div>' +
       row('Iniciar com o Windows', info.packaged ? 'Abre minimizado na bandeja ao ligar o computador.' : 'Disponível na versão instalada (em modo de desenvolvimento não é registrado).', sw('data-g="startWithWindows"', g.startWithWindows)) +
       row('Ao fechar a janela, continuar na bandeja', 'Os alertas continuam funcionando. Para encerrar, use "Sair" no ícone da bandeja.', sw('data-g="closeToTray"', g.closeToTray)) +
       '<div class="section-title">Janela flutuante</div>' +
-      row('Mostrar janela flutuante', 'Mini painel com horário, atividade atual, tempo restante e próxima. Arraste para mover; puxe a borda para redimensionar.', sw('data-fl="enabled"', f.enabled)) +
+      row('Mostrar janela flutuante', 'Pílula pequena com a atividade atual e o tempo restante. Duplo clique abre a janela principal.', sw('data-fl="enabled"', f.enabled)) +
+      row('Fixar no topo central da tela', 'Desative para poder arrastar a pílula para onde quiser.', sw('data-fl="fixedTop"', f.fixedTop)) +
       row('Sempre visível (no topo)', 'Fica acima das outras janelas sem roubar o foco.', sw('data-fl="alwaysOnTop"', f.alwaysOnTop)) +
       row('Opacidade', Math.round(f.opacity * 100) + '%', '<input type="range" min="40" max="100" step="5" value="' + Math.round(f.opacity * 100) + '" data-fl="opacity">') +
       '<div class="section-title">Backup</div>' +
@@ -507,6 +586,7 @@
       row('Rotina Desktop ' + esc(info.version), 'Dados salvos em: ' + esc(info.dataDir) + ' (config.json, state.json e rotina.log)', '<button class="btn" data-act="openDataFolder">' + icon('folder', 16) + 'Abrir pasta</button>') +
       '</div>';
     App.hydrateIcons(panelEl);
+    renderUpdateBox(await api.action('update:state'));
     panelEl.querySelectorAll('[data-g]').forEach((t) => t.addEventListener('change', () => App.commit((c) => { c.settings.general[t.dataset.g] = t.checked; })));
     panelEl.querySelectorAll('[data-fl]').forEach((t) => t.addEventListener('change', () => App.commit((c) => {
       c.settings.floating[t.dataset.fl] = t.type === 'range' ? Number(t.value) / 100 : t.checked;

@@ -168,11 +168,13 @@ function normalizeConfig(input) {
       floating: {
         enabled: bool(sf.enabled, df.enabled),
         alwaysOnTop: bool(sf.alwaysOnTop, df.alwaysOnTop),
+        fixedTop: bool(sf.fixedTop, df.fixedTop),
         opacity: num(sf.opacity, df.opacity, 0.4, 1)
       },
       general: {
         startWithWindows: bool(sg.startWithWindows, dg.startWithWindows),
-        closeToTray: bool(sg.closeToTray, dg.closeToTray)
+        closeToTray: bool(sg.closeToTray, dg.closeToTray),
+        autoUpdateCheck: bool(sg.autoUpdateCheck, dg.autoUpdateCheck)
       }
     }
   };

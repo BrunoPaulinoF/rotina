@@ -1,7 +1,7 @@
 {
   "name": "rotina-desktop",
   "productName": "Rotina Desktop",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Assistente visual de rotina pessoal, 100% offline",
   "main": "src/main/main.js",
   "author": "Rotina Desktop",
@@ -13,7 +13,8 @@
     "test": "node --test \"test/*.test.js\"",
     "icons": "node scripts/make-icon.js",
     "capture": "electron . --capture=capture --capture-exit",
-    "dist": "npm run check && npm test && electron-builder --win nsis --x64"
+    "dist": "npm run check && npm test && electron-builder --win nsis --x64 --publish never",
+    "release": "node scripts/release.js"
   },
   "build": {
     "appId": "com.rotinadesktop.app",
@@ -26,7 +27,15 @@
     "files": [
       "src/**/*",
       "assets/**/*",
+      "!assets/installer.nsh",
       "package.json"
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "BrunoPaulinoF",
+        "repo": "rotina"
+      }
     ],
     "asar": true,
     "electronLanguages": [
