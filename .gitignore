@@ -3,3 +3,4 @@ dist/
 capture/
 *.log
 .test-data/
+build/

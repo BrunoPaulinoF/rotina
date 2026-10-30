@@ -29,6 +29,7 @@ run('npm run dist');
 
 const files = ['RotinaDesktop-Setup-' + version + '.exe', 'RotinaDesktop-Setup-' + version + '.exe.blockmap', 'latest.yml']
   .map((f) => path.join('dist', f))
+  .concat([path.join('build', 'RotinaDesktop.mcpb')])
   .filter((f) => fs.existsSync(path.join(root, f)));
 if (!files.some((f) => f.endsWith('latest.yml'))) {
   console.error('dist/latest.yml não foi gerado; o app não conseguiria verificar o download.');

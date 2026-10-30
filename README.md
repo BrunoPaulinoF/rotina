@@ -11,11 +11,14 @@ Assistente visual de rotina pessoal para Windows 10/11. Mostra a atividade atual
 
 ## Agentes de IA (Claude Cowork, Claude Code, Cursor…)
 
-O agente consegue consultar e alterar a rotina por três caminhos, todos com a mesma validação do app (que recarrega na hora):
+Em **Configurações → Agentes de IA**, copie o prompt e cole numa conversa com o agente. Ele escolhe o caminho que consegue usar e pede as permissões necessárias:
 
-1. **MCP** — em Configurações → Agentes de IA: botão "Conectar ao Claude" (Claude Desktop/Cowork), comando pronto para o Claude Code e JSON para outros clientes. O servidor roda pelo próprio `RotinaDesktop.exe` (com `ELECTRON_RUN_AS_NODE=1`), sem precisar de Node.
-2. **Linha de comando** — `RotinaDesktop.exe <caminho>\app.asar\src\agent\server.js --cli ajuda`; argumentos como `chave=valor` (ex.: `--cli salvar_atividade title="Academia" start=19:00 end=20:00 days=seg,qua`).
-3. **Arquivo** — editar `%APPDATA%\Rotina Desktop\config.json`; o formato está em `AGENTES.md`, na mesma pasta.
+1. **Pasta de comunicação** (`Documentos\Rotina Desktop`) — funciona no **Claude Cowork** sem instalar nada: o agente pede acesso à pasta, grava pedidos em `pedidos\` e o app responde em `respostas\`. O guia `LEIA-ME para agentes de IA.md` lista as ferramentas.
+2. **Extensão do Claude Desktop/Cowork** (`RotinaDesktop.mcpb`, opcional) — ferramentas nativas; arraste o arquivo para a janela do Claude Desktop.
+3. **MCP stdio** — Claude Code (`claude mcp add rotina-desktop ...`, comando completo na aba), Cursor, VS Code, Windsurf, Codex, Gemini.
+4. **Linha de comando** — `server.js --cli <ferramenta> chave=valor`.
+
+Todas as alterações são executadas **pelo app aberto** (ponte por named pipe ou pela pasta). Motivo: o Claude Desktop da Microsoft Store desvia as gravações em `%AppData%` dos processos que ele inicia para uma cópia privada do pacote; gravar o `config.json` direto de uma extensão nunca chegaria ao app. Por isso a pasta de comunicação fica em Documentos, fora do AppData.
 
 Ferramentas: `ver_agora`, `ver_dia`, `ver_semana`, `listar_atividades`, `salvar_atividade`, `remover_atividade`, `listar_categorias`, `salvar_categoria`, `remover_categoria`, `definir_dia_semana`, `salvar_excecao`, `remover_excecao`, `editar_lista`, `alterar_configuracoes`, `ler_configuracao`, `substituir_configuracao`, `desfazer_ultima_alteracao`.
 
@@ -60,7 +63,9 @@ src/main/alerts.js     Disparo de alertas: tolerância, saltos de relógio, paus
 src/main/store.js      Persistência JSON atômica e validação da configuração
 src/main/defaults.js   Rotina inicial
 src/main/updater.js    Atualização pelo GitHub Releases
-src/agent/             Ferramentas para agentes de IA: servidor MCP e linha de comando
+src/agent/             Ferramentas para agentes de IA: servidor MCP, linha de comando e ponte com o app
+src/main/inbox.js      Pasta de comunicação (pedidos/respostas) para agentes
+scripts/build-mcpb.js  Gera a extensão do Claude Desktop (build/RotinaDesktop.mcpb)
 src/preload.js         Ponte segura entre janelas e processo principal
 src/renderer/          Interface (HTML/CSS/JS puro): principal, flutuante, cartão de alerta, áudio
 scripts/               Geração de ícones e verificação de sintaxe

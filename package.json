@@ -1,7 +1,7 @@
 {
   "name": "rotina-desktop",
   "productName": "Rotina Desktop",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Assistente visual de rotina pessoal, 100% offline",
   "main": "src/main/main.js",
   "author": "Rotina Desktop",
@@ -13,7 +13,8 @@
     "test": "node --test \"test/*.test.js\"",
     "icons": "node scripts/make-icon.js",
     "capture": "electron . --capture=capture --capture-exit",
-    "dist": "npm run check && npm test && electron-builder --win nsis --x64 --publish never",
+    "mcpb": "node scripts/build-mcpb.js",
+    "dist": "npm run check && npm test && npm run mcpb && electron-builder --win nsis --x64 --publish never",
     "release": "node scripts/release.js"
   },
   "build": {
@@ -29,6 +30,12 @@
       "assets/**/*",
       "!assets/installer.nsh",
       "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "build/RotinaDesktop.mcpb",
+        "to": "RotinaDesktop.mcpb"
+      }
     ],
     "publish": [
       {

@@ -13,7 +13,10 @@ const { createDefaultConfig } = require('./defaults');
 const { JsonStore, normalizeConfig, normalizeState } = require('./store');
 const { AlertService } = require('./alerts');
 const { Updater } = require('./updater');
-const { detectConnections, buildAgentPrompt } = require('./agent-setup');
+const { detectConnections, buildAgentPrompt, buildAgentGuide } = require('./agent-setup');
+const { startInbox } = require('./inbox');
+const { startBridgeServer, registerAppPath } = require('../agent/bridge');
+const { callTool } = require('../agent/tools');
 
 const APP_ID = 'com.rotinadesktop.app';
 const ROOT = path.join(__dirname, '..', '..');
@@ -28,7 +31,11 @@ const argValue = (prefix) => {
 
 // Diretório de dados alternativo (testes) e relógio simulado (validar transições).
 const dataDirArg = process.env.ROTINA_DATA_DIR || argValue('--data-dir=');
-if (dataDirArg) app.setPath('userData', path.resolve(dataDirArg));
+if (dataDirArg) {
+  app.setPath('userData', path.resolve(dataDirArg));
+  // As ferramentas de agente executadas aqui dentro também usam essa pasta.
+  process.env.ROTINA_DATA_DIR = path.resolve(dataDirArg);
+}
 const fakeNow = process.env.ROTINA_FAKE_NOW || argValue('--fake-now=');
 let clockOffset = 0;
 if (fakeNow && !Number.isNaN(Date.parse(fakeNow))) clockOffset = Date.parse(fakeNow) - Date.now();
@@ -165,8 +172,22 @@ function setupUpdater() {
 }
 
 // ---------- agentes de IA ----------
-// O servidor MCP/CLI roda pelo próprio executável em modo Node (não exige Node instalado).
+// Três caminhos, todos executados pelo app (que grava no arquivo real da rotina):
+//  1. MCP: extensão .mcpb (Claude Desktop/Cowork) ou servidor stdio (Claude Code, Cursor...), via ponte.
+//  2. Pasta de comunicação em Documentos (agentes que só manipulam arquivos, ex.: Cowork sem extensão).
+//  3. Linha de comando.
+let inbox = null;
+
+function inboxDir() {
+  return dataDirArg ? path.join(app.getPath('userData'), 'pasta-agentes') : path.join(app.getPath('documents'), 'Rotina Desktop');
+}
+
+function mcpbSource() {
+  return app.isPackaged ? path.join(process.resourcesPath, 'RotinaDesktop.mcpb') : path.join(ROOT, 'build', 'RotinaDesktop.mcpb');
+}
+
 function agentInfo() {
+  // O servidor stdio roda pelo próprio executável em modo Node (não exige Node instalado).
   const server = app.isPackaged
     ? path.join(process.resourcesPath, 'app.asar', 'src', 'agent', 'server.js')
     : path.join(ROOT, 'src', 'agent', 'server.js');
@@ -174,19 +195,20 @@ function agentInfo() {
   const env = { ELECTRON_RUN_AS_NODE: '1' };
   if (dataDirArg) env.ROTINA_DATA_DIR = app.getPath('userData');
   const envFlags = Object.entries(env).map(([k, v]) => '-e ' + k + '=' + (v.includes(' ') ? '"' + v + '"' : v)).join(' ');
+  const dir = inboxDir();
   const info = {
     command,
     server,
     env,
     dataDir: app.getPath('userData'),
-    configFile: path.join(app.getPath('userData'), 'config.json'),
-    guideFile: path.join(app.getPath('userData'), 'AGENTES.md'),
-    mcpJson: JSON.stringify({ mcpServers: { rotina: { command, args: [server], env } } }, null, 2),
-    claudeCode: 'claude mcp add rotina --scope user ' + envFlags + ' -- "' + command + '" "' + server + '"',
-    cli: '$env:ELECTRON_RUN_AS_NODE=1; & "' + command + '" "' + server + '" --cli ajuda',
-    claudeDesktopConfigs: claudeDesktopConfigPaths()
+    inboxDir: dir,
+    guideFile: path.join(dir, 'LEIA-ME para agentes de IA.md'),
+    mcpbFile: path.join(dir, 'RotinaDesktop.mcpb'),
+    mcpJson: JSON.stringify({ mcpServers: { 'rotina-desktop': { command, args: [server], env } } }, null, 2),
+    claudeCode: 'claude mcp add rotina-desktop --scope user ' + envFlags + ' -- "' + command + '" "' + server + '"',
+    cli: '$env:ELECTRON_RUN_AS_NODE=1; & "' + command + '" "' + server + '" --cli ajuda'
   };
-  info.prompt = buildAgentPrompt(info, userDirs());
+  info.prompt = buildAgentPrompt(info);
   return info;
 }
 
@@ -194,90 +216,31 @@ function userDirs() {
   return { home: app.getPath('home'), appData: app.getPath('appData'), localAppData: process.env.LOCALAPPDATA || path.join(app.getPath('home'), 'AppData', 'Local') };
 }
 
-/** Pastas de configuração do Claude Desktop (instalação clássica e da Microsoft Store). */
-function claudeDesktopConfigPaths() {
-  const out = [];
-  const pkgs = path.join(process.env.LOCALAPPDATA || '', 'Packages');
-  try {
-    for (const d of fs.readdirSync(pkgs)) {
-      const dir = path.join(pkgs, d, 'LocalCache', 'Roaming', 'Claude');
-      if (/^Claude_/i.test(d) && fs.existsSync(dir)) out.push(path.join(dir, 'claude_desktop_config.json'));
-    }
-  } catch (_) { /* sem pasta de pacotes */ }
-  const classic = path.join(process.env.APPDATA || '', 'Claude');
-  if (fs.existsSync(classic)) out.push(path.join(classic, 'claude_desktop_config.json'));
-  return out;
-}
-
-/** Adiciona (ou atualiza) o servidor "rotina" no claude_desktop_config.json, preservando o resto. */
-function installClaudeDesktop() {
+/** Prepara a pasta de comunicação: guia, extensão e as subpastas de pedidos/respostas. */
+function setupAgentAccess() {
   const info = agentInfo();
-  const entry = JSON.parse(info.mcpJson).mcpServers.rotina;
-  const written = [];
-  for (const file of info.claudeDesktopConfigs) {
-    let cfg = {};
-    if (fs.existsSync(file)) {
-      try {
-        cfg = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^﻿/, ''));
-      } catch (err) {
-        throw new Error('Não consegui ler ' + file + ' (JSON inválido). Corrija ou apague o arquivo e tente de novo.');
-      }
-      fs.copyFileSync(file, file + '.antes-rotina');
-    }
-    cfg.mcpServers = Object.assign({}, cfg.mcpServers, { rotina: entry });
-    fs.writeFileSync(file, JSON.stringify(cfg, null, 2), 'utf8');
-    written.push(file);
-  }
-  log('Servidor MCP registrado no Claude Desktop: ' + written.join(', '));
-  return written;
-}
-
-/** Guia para agentes que trabalham editando arquivos (sem MCP). Regerado a cada início. */
-function writeAgentGuide() {
-  const info = agentInfo();
-  const text = [
-    '# Rotina Desktop — guia para agentes de IA',
-    '',
-    'Este arquivo descreve como ler e alterar a rotina do usuário. Ele é regerado pelo app; não edite.',
-    '',
-    '## Prompt de conexão (o mesmo da aba Agentes de IA)',
-    '',
-    info.prompt,
-    '',
-    '## Opção 1 — MCP (recomendado)',
-    'Configuração para clientes MCP (Claude Desktop/Cowork, Cursor etc.):',
-    '```json',
-    info.mcpJson,
-    '```',
-    'Claude Code: `' + info.claudeCode + '`',
-    '',
-    '## Opção 2 — linha de comando (PowerShell)',
-    '```powershell',
-    info.cli,
-    '$env:ELECTRON_RUN_AS_NODE=1; & "' + info.command + '" "' + info.server + '" --cli ver_dia data=amanha',
-    '$env:ELECTRON_RUN_AS_NODE=1; & "' + info.command + '" "' + info.server + '" --cli salvar_atividade title="Academia" start=19:00 end=20:00 days=seg,qua category=corpo icon=dumbbell',
-    '$env:ELECTRON_RUN_AS_NODE=1; & "' + info.command + '" "' + info.server + '" --cli salvar_excecao data=2026-12-25 tipo=livre nota="Natal"',
-    '```',
-    '',
-    '## Opção 3 — editar o arquivo diretamente',
-    'Arquivo: `' + info.configFile + '` (JSON, UTF-8). O app aberto recarrega sozinho ao salvar e corrige/descarta campos inválidos.',
-    '',
-    '- `activities[]`: `{ id, title, subtitle, start: "HH:MM", duration: minutos, days: [0-6] (0 = domingo), category: id de categories[], icon, priority: 0 | 10 (compromisso prevalece em sobreposições), alertStart, alertAdvance, enabled }`',
-    '- `subtitle` aceita `{casa}`, `{projeto}` e `{nota}`, preenchidos por `weekly[diaDaSemana]`.',
-    '- `weekly[0..6]`: `{ casa, nota, projeto }` por dia da semana (0 = domingo).',
-    '- `exceptions[]`: `{ date: "AAAA-MM-DD", note, off: dia livre, baseDay: usar rotina de outro dia (0-6) ou null, removedIds: [ids], extra: [atividades sem days] }`.',
-    '- `categories[]`: `{ id, name, color: "#RRGGBB", icon }`. `lists`: regras, sono, planejamento, lembretes, casaTodoDia. `meta`: texto.',
-    '- `settings.alerts`, `settings.floating`, `settings.general`: alertas, janela flutuante e inicialização.',
-    '',
-    'Faça uma cópia antes de grandes mudanças. As ferramentas MCP/CLI guardam a versão anterior em `config.anterior.json`.'
-  ].join('\n');
   try {
-    fs.writeFileSync(info.guideFile, text, 'utf8');
+    fs.mkdirSync(info.inboxDir, { recursive: true });
+    fs.writeFileSync(info.guideFile, buildAgentGuide(info), 'utf8');
+    fs.writeFileSync(path.join(app.getPath('userData'), 'AGENTES.md'), buildAgentGuide(info), 'utf8');
+    if (fs.existsSync(mcpbSource())) fs.copyFileSync(mcpbSource(), info.mcpbFile);
   } catch (err) {
-    log('Não foi possível gravar AGENTES.md: ' + err.message);
+    log('Não foi possível preparar a pasta para agentes: ' + err.message);
   }
+  inbox = startInbox(info.inboxDir, (tool, args) => callTool(tool, args), log);
+  startBridgeServer((tool, args) => callTool(tool, args), log, dataDirArg ? app.getPath('userData') : null);
+  if (app.isPackaged) registerAppPath(process.execPath, log);
 }
 
+/** Mostra a extensão no Explorador para o usuário arrastar para o Claude (sem associação de arquivo no Windows). */
+function revealExtension() {
+  const info = agentInfo();
+  if (!fs.existsSync(mcpbSource())) return { ok: false, error: 'Arquivo da extensão não encontrado nesta instalação.' };
+  fs.mkdirSync(info.inboxDir, { recursive: true });
+  fs.copyFileSync(mcpbSource(), info.mcpbFile);
+  shell.showItemInFolder(info.mcpbFile);
+  return { ok: true, file: info.mcpbFile };
+}
 // ---------- status ----------
 function buildStatus() {
   const t = now();
@@ -803,14 +766,15 @@ function registerIpc() {
       case 'update:install': return updater.install(() => app.quit());
       case 'agent:info': return agentInfo();
       case 'agent:connections': return detectConnections(userDirs());
-      case 'agent:installClaudeDesktop': {
+      case 'agent:revealExtension': {
         try {
-          return { ok: true, files: installClaudeDesktop() };
+          return revealExtension();
         } catch (err) {
           return { ok: false, error: err.message };
         }
       }
       case 'agent:openGuide': return shell.openPath(agentInfo().guideFile);
+      case 'agent:openFolder': return shell.openPath(agentInfo().inboxDir);
       case 'copyText': return clipboard.writeText(String(p.text || ''));
       case 'quit': return app.quit();
       default: return null;
@@ -881,7 +845,7 @@ if (!app.requestSingleInstanceLock()) {
     scheduleTick();
 
     watchConfigFile();
-    writeAgentGuide();
+    setupAgentAccess();
     setupUpdater();
 
     powerMonitor.on('resume', () => {

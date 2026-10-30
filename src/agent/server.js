@@ -13,6 +13,36 @@
 
 const readline = require('readline');
 const { TOOLS, INSTRUCTIONS, callTool, ToolError } = require('./tools');
+const { callRemote, launchApp } = require('./bridge');
+
+/**
+ * Executa no app aberto (pela ponte) sempre que possível; o app grava no arquivo real.
+ * Se o app estiver fechado: na extensão do Claude (ROTINA_REQUIRE_APP=1) tenta abri-lo,
+ * porque gravar direto cairia na cópia privada do pacote; nos demais, usa o arquivo local.
+ */
+async function dispatch(name, args) {
+  const unwrap = (r) => {
+    if (!r.ok) throw new ToolError(r.error);
+    return r.text;
+  };
+  try {
+    return unwrap(await callRemote(name, args));
+  } catch (err) {
+    if (err.code !== 'NO_APP') throw err;
+  }
+  if (process.env.ROTINA_REQUIRE_APP !== '1') return callTool(name, args);
+  if (await launchApp()) {
+    for (let i = 0; i < 20; i++) {
+      await new Promise((r) => setTimeout(r, 1000));
+      try {
+        return unwrap(await callRemote(name, args));
+      } catch (err) {
+        if (err.code !== 'NO_APP') throw err;
+      }
+    }
+  }
+  throw new ToolError('O app Rotina Desktop não está aberto e não consegui abri-lo. Peça ao usuário para abrir o Rotina Desktop (ícone perto do relógio do Windows) e tente de novo.');
+}
 
 const VERSION = require('../../package.json').version;
 const PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'];
@@ -57,7 +87,7 @@ async function runCli(argv) {
     return 2;
   }
   try {
-    console.log(await callTool(name, args));
+    console.log(await dispatch(name, args));
     return 0;
   } catch (err) {
     console.error('Erro: ' + err.message);
@@ -81,7 +111,7 @@ function runMcp() {
     'tools/list': () => ({ tools: TOOLS.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })) }),
     'tools/call': async (p) => {
       try {
-        const text = await callTool(p.name, p.arguments);
+        const text = await dispatch(p.name, p.arguments);
         return { content: [{ type: 'text', text }] };
       } catch (err) {
         // Erros de uso voltam como resultado para o agente poder corrigir a chamada.

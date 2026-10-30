@@ -495,7 +495,7 @@
     const found = conns.filter((c) => c.status !== 'ausente');
     const connRows = found.length
       ? found.map((c) => '<div class="conn-row"><span class="conn-dot ' + c.status + '"></span><strong>' + esc(c.name) + '</strong><span class="conn-status ' + c.status + '">' + CONN_LABEL[c.status] + '</span>' +
-        (c.id === 'claude-desktop' && c.status !== 'conectado' ? '<button class="btn small" id="install-desktop">' + icon('plus', 14) + 'Conectar agora</button>' : '') + '</div>').join('')
+        (c.id === 'claude-desktop' && c.status !== 'conectado' ? '<button class="btn small" data-install>' + icon('plus', 14) + 'Instalar</button>' : '') + '</div>').join('')
       : '<p class="info-box">Nenhum agente compatível encontrado neste computador. Cole o prompt acima no agente que você usa.</p>';
 
     panelEl.innerHTML =
@@ -504,28 +504,29 @@
       '<div class="agent-hero">' +
       '<div class="agent-steps"><b>1.</b> Copie o prompt <span>→</span> <b>2.</b> Cole numa conversa com o seu agente <span>→</span> <b>3.</b> Autorize o que ele pedir. Ele se conecta sozinho e confirma mostrando sua atividade atual.</div>' +
       '<div class="prompt-box"><pre>' + esc(info.prompt) + '</pre></div>' +
-      '<div class="agent-actions"><button class="btn primary big" data-copy="prompt">' + icon('list', 18) + 'Copiar prompt para o agente</button><small>Funciona com qualquer agente: ele conecta via MCP, linha de comando ou editando o arquivo, conforme o que ele suporta.</small></div>' +
+      '<div class="agent-actions"><button class="btn primary big" data-copy="prompt">' + icon('list', 18) + 'Copiar prompt para o agente</button><small>Funciona com qualquer agente. No Claude Cowork, ele só vai pedir acesso à pasta ' + esc(info.inboxDir) + '.</small></div>' +
       '</div>' +
+      '<div class="section-title">Ferramentas nativas no Claude Desktop / Cowork (opcional)</div>' +
+      row('Instalar a extensão Rotina Desktop', 'Abre a pasta com o arquivo RotinaDesktop.mcpb. Arraste esse arquivo para a janela do Claude Desktop (ou, no Claude, Configurações → Extensões → Configurações avançadas → Instalar extensão) e clique em Instalar. Depois, abra uma nova conversa.', '<button class="btn" data-install>' + icon('download', 16) + 'Instalar no Claude Desktop</button>') +
       '<div class="section-title" style="display:flex;align-items:center;gap:10px">Agentes neste computador<button class="btn small" id="refresh-conn" style="margin-left:auto">' + icon('rotate', 14) + 'Atualizar</button></div>' +
       '<div class="conn-list">' + connRows + '</div>' +
       '<details class="manual"><summary>Configuração manual (avançado)</summary>' +
       '<div class="section-title">JSON para clientes MCP</div>' + code('json', texts.json) +
       '<div class="section-title">Claude Code (terminal)</div>' + code('code', texts.code) +
       '<div class="section-title">Linha de comando</div>' + code('cli', texts.cli) +
-      row('Guia para agentes que editam arquivos', esc(info.guideFile), '<button class="btn" id="open-guide">' + icon('book', 16) + 'Abrir guia</button>') +
+      row('Pasta de comunicação para agentes', esc(info.inboxDir) + ' — o agente grava pedidos em "pedidos" e o app responde em "respostas".', '<button class="btn" id="open-folder">' + icon('folder', 16) + 'Abrir pasta</button><button class="btn" id="open-guide">' + icon('book', 16) + 'Abrir guia</button>') +
       '<p class="info-box">Ferramentas: ver_agora, ver_dia, ver_semana, listar_atividades, salvar_atividade, remover_atividade, listar_categorias, salvar_categoria, remover_categoria, definir_dia_semana, salvar_excecao, remover_excecao, editar_lista, alterar_configuracoes, ler_configuracao, substituir_configuracao e desfazer_ultima_alteracao. Toda alteração passa pela validação do app e pode ser desfeita.</p>' +
       '</details>' +
       '</div>';
     App.hydrateIcons(panelEl);
     panelEl.querySelectorAll('[data-copy]').forEach((b) => (b.onclick = () => api.action('copyText', { text: texts[b.dataset.copy] }).then(() => App.toast(b.dataset.copy === 'prompt' ? 'Prompt copiado — cole no seu agente' : 'Copiado'))));
     panelEl.querySelector('#open-guide').onclick = () => api.action('agent:openGuide');
+    panelEl.querySelector('#open-folder').onclick = () => api.action('agent:openFolder');
     panelEl.querySelector('#refresh-conn').onclick = () => render();
-    const inst = panelEl.querySelector('#install-desktop');
-    if (inst) inst.onclick = async () => {
-      const r = await api.action('agent:installClaudeDesktop');
-      App.toast(r.ok ? 'Conectado! Feche e abra o Claude Desktop.' : r.error);
-      render();
-    };
+    panelEl.querySelectorAll('[data-install]').forEach((b) => (b.onclick = async () => {
+      const r = await api.action('agent:revealExtension');
+      App.toast(r.ok ? 'Arraste RotinaDesktop.mcpb para a janela do Claude Desktop' : r.error);
+    }));
   }
 
   // =============== ATUALIZAÇÕES ===============
