@@ -22,7 +22,9 @@ test('manifest da extensão segue o formato 0.3 (igual às extensões já instal
 test('arquivo .mcpb é um zip válido e o servidor dentro dele responde ao MCP', async () => {
   const file = build();
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rotina-mcpb-'));
-  execFileSync('tar', ['-xf', file, '-C', dir]);
+  // tar do Windows: o GNU tar do Git Bash interpreta "C:\..." como servidor remoto.
+  const tar = process.platform === 'win32' ? path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe') : 'tar';
+  execFileSync(tar, ['-xf', file, '-C', dir]);
   const m = JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8'));
   const entry = path.join(dir, m.server.entry_point);
   assert.ok(fs.existsSync(entry));
