@@ -13,6 +13,7 @@ const { createDefaultConfig } = require('./defaults');
 const { JsonStore, normalizeConfig, normalizeState } = require('./store');
 const { AlertService } = require('./alerts');
 const { Updater } = require('./updater');
+const { detectConnections, buildAgentPrompt } = require('./agent-setup');
 
 const APP_ID = 'com.rotinadesktop.app';
 const ROOT = path.join(__dirname, '..', '..');
@@ -173,9 +174,10 @@ function agentInfo() {
   const env = { ELECTRON_RUN_AS_NODE: '1' };
   if (dataDirArg) env.ROTINA_DATA_DIR = app.getPath('userData');
   const envFlags = Object.entries(env).map(([k, v]) => '-e ' + k + '=' + (v.includes(' ') ? '"' + v + '"' : v)).join(' ');
-  return {
+  const info = {
     command,
     server,
+    env,
     dataDir: app.getPath('userData'),
     configFile: path.join(app.getPath('userData'), 'config.json'),
     guideFile: path.join(app.getPath('userData'), 'AGENTES.md'),
@@ -184,6 +186,12 @@ function agentInfo() {
     cli: '$env:ELECTRON_RUN_AS_NODE=1; & "' + command + '" "' + server + '" --cli ajuda',
     claudeDesktopConfigs: claudeDesktopConfigPaths()
   };
+  info.prompt = buildAgentPrompt(info, userDirs());
+  return info;
+}
+
+function userDirs() {
+  return { home: app.getPath('home'), appData: app.getPath('appData'), localAppData: process.env.LOCALAPPDATA || path.join(app.getPath('home'), 'AppData', 'Local') };
 }
 
 /** Pastas de configuração do Claude Desktop (instalação clássica e da Microsoft Store). */
@@ -231,6 +239,10 @@ function writeAgentGuide() {
     '# Rotina Desktop — guia para agentes de IA',
     '',
     'Este arquivo descreve como ler e alterar a rotina do usuário. Ele é regerado pelo app; não edite.',
+    '',
+    '## Prompt de conexão (o mesmo da aba Agentes de IA)',
+    '',
+    info.prompt,
     '',
     '## Opção 1 — MCP (recomendado)',
     'Configuração para clientes MCP (Claude Desktop/Cowork, Cursor etc.):',
@@ -790,6 +802,7 @@ function registerIpc() {
       case 'update:download': return updater.download();
       case 'update:install': return updater.install(() => app.quit());
       case 'agent:info': return agentInfo();
+      case 'agent:connections': return detectConnections(userDirs());
       case 'agent:installClaudeDesktop': {
         try {
           return { ok: true, files: installClaudeDesktop() };

@@ -485,39 +485,46 @@
   }
 
   // =============== AGENTES DE IA ===============
+  const CONN_LABEL = { conectado: 'Conectado', 'nao-conectado': 'Não conectado' };
+
   async function renderAgents() {
-    const info = await api.action('agent:info');
+    const [info, conns] = await Promise.all([api.action('agent:info'), api.action('agent:connections')]);
     if (panel !== 'agentes') return;
     const code = (id, text) => '<div class="code-box"><pre>' + esc(text) + '</pre><button class="btn small" data-copy="' + id + '">' + icon('list', 14) + 'Copiar</button></div>';
-    const texts = {
-      json: info.mcpJson,
-      code: info.claudeCode,
-      cli: info.cli,
-      prompt: 'Minha rotina fica no app Rotina Desktop. Use as ferramentas do servidor MCP "rotina" (ou o guia em ' + info.guideFile + ') para consultar e alterar horários, atividades, exceções de datas e tarefas da semana. Antes de mudar, mostre o que vai alterar.'
-    };
-    const desktop = info.claudeDesktopConfigs.length
-      ? row('Claude Desktop / Cowork', 'Adiciona o servidor "rotina" em: ' + info.claudeDesktopConfigs.map(esc).join(' e ') + '. Depois, feche e abra o Claude Desktop.', '<button class="btn primary" id="install-desktop">' + icon('plus', 16) + 'Conectar ao Claude</button>')
-      : row('Claude Desktop / Cowork', 'Claude Desktop não encontrado neste computador. Use a configuração JSON abaixo no seu cliente.', '');
+    const texts = { prompt: info.prompt, json: info.mcpJson, code: info.claudeCode, cli: info.cli };
+    const found = conns.filter((c) => c.status !== 'ausente');
+    const connRows = found.length
+      ? found.map((c) => '<div class="conn-row"><span class="conn-dot ' + c.status + '"></span><strong>' + esc(c.name) + '</strong><span class="conn-status ' + c.status + '">' + CONN_LABEL[c.status] + '</span>' +
+        (c.id === 'claude-desktop' && c.status !== 'conectado' ? '<button class="btn small" id="install-desktop">' + icon('plus', 14) + 'Conectar agora</button>' : '') + '</div>').join('')
+      : '<p class="info-box">Nenhum agente compatível encontrado neste computador. Cole o prompt acima no agente que você usa.</p>';
 
     panelEl.innerHTML =
-      head('Agentes de IA', 'Deixe seu agente de IA (Claude Cowork, Claude Code, Cursor, ChatGPT com MCP…) consultar e alterar a rotina. As alterações aparecem aqui na hora.') +
+      head('Agentes de IA', 'Seu agente de IA (Claude Cowork, Claude Code, Cursor, Copilot, Codex, Gemini…) pode consultar e alterar a rotina. As alterações aparecem aqui na hora.') +
       '<div class="panel-body">' +
-      '<div class="section-title">Conexão rápida</div>' + desktop +
-      '<div class="section-title">Outros clientes MCP (configuração JSON)</div>' + code('json', texts.json) +
+      '<div class="agent-hero">' +
+      '<div class="agent-steps"><b>1.</b> Copie o prompt <span>→</span> <b>2.</b> Cole numa conversa com o seu agente <span>→</span> <b>3.</b> Autorize o que ele pedir. Ele se conecta sozinho e confirma mostrando sua atividade atual.</div>' +
+      '<div class="prompt-box"><pre>' + esc(info.prompt) + '</pre></div>' +
+      '<div class="agent-actions"><button class="btn primary big" data-copy="prompt">' + icon('list', 18) + 'Copiar prompt para o agente</button><small>Funciona com qualquer agente: ele conecta via MCP, linha de comando ou editando o arquivo, conforme o que ele suporta.</small></div>' +
+      '</div>' +
+      '<div class="section-title" style="display:flex;align-items:center;gap:10px">Agentes neste computador<button class="btn small" id="refresh-conn" style="margin-left:auto">' + icon('rotate', 14) + 'Atualizar</button></div>' +
+      '<div class="conn-list">' + connRows + '</div>' +
+      '<details class="manual"><summary>Configuração manual (avançado)</summary>' +
+      '<div class="section-title">JSON para clientes MCP</div>' + code('json', texts.json) +
       '<div class="section-title">Claude Code (terminal)</div>' + code('code', texts.code) +
-      '<div class="section-title">Agentes que usam linha de comando</div>' + code('cli', texts.cli) +
-      '<div class="section-title">Agentes que só editam arquivos</div>' +
-      row('Guia para agentes', esc(info.guideFile) + ' — explica o formato do config.json. O app recarrega o arquivo ao salvar.', '<button class="btn" id="open-guide">' + icon('book', 16) + 'Abrir guia</button>') +
-      '<div class="section-title">Sugestão de pedido para o agente</div>' + code('prompt', texts.prompt) +
-      '<p class="info-box">Ferramentas disponíveis: ver_agora, ver_dia, ver_semana, listar_atividades, salvar_atividade, remover_atividade, listar_categorias, salvar_categoria, remover_categoria, definir_dia_semana, salvar_excecao, remover_excecao, editar_lista, alterar_configuracoes, ler_configuracao, substituir_configuracao e desfazer_ultima_alteracao. Toda alteração passa pela mesma validação do app e pode ser desfeita.</p>' +
+      '<div class="section-title">Linha de comando</div>' + code('cli', texts.cli) +
+      row('Guia para agentes que editam arquivos', esc(info.guideFile), '<button class="btn" id="open-guide">' + icon('book', 16) + 'Abrir guia</button>') +
+      '<p class="info-box">Ferramentas: ver_agora, ver_dia, ver_semana, listar_atividades, salvar_atividade, remover_atividade, listar_categorias, salvar_categoria, remover_categoria, definir_dia_semana, salvar_excecao, remover_excecao, editar_lista, alterar_configuracoes, ler_configuracao, substituir_configuracao e desfazer_ultima_alteracao. Toda alteração passa pela validação do app e pode ser desfeita.</p>' +
+      '</details>' +
       '</div>';
     App.hydrateIcons(panelEl);
-    panelEl.querySelectorAll('[data-copy]').forEach((b) => (b.onclick = () => api.action('copyText', { text: texts[b.dataset.copy] }).then(() => App.toast('Copiado'))));
+    panelEl.querySelectorAll('[data-copy]').forEach((b) => (b.onclick = () => api.action('copyText', { text: texts[b.dataset.copy] }).then(() => App.toast(b.dataset.copy === 'prompt' ? 'Prompt copiado — cole no seu agente' : 'Copiado'))));
     panelEl.querySelector('#open-guide').onclick = () => api.action('agent:openGuide');
+    panelEl.querySelector('#refresh-conn').onclick = () => render();
     const inst = panelEl.querySelector('#install-desktop');
     if (inst) inst.onclick = async () => {
       const r = await api.action('agent:installClaudeDesktop');
-      App.toast(r.ok ? 'Conectado! Reinicie o Claude Desktop.' : r.error);
+      App.toast(r.ok ? 'Conectado! Feche e abra o Claude Desktop.' : r.error);
+      render();
     };
   }
 

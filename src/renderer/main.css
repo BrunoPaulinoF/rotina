@@ -353,6 +353,23 @@ main { flex: 1; min-height: 0; position: relative; }
 .code-box { display: flex; gap: 10px; align-items: flex-start; background: #0F2D5C; border-radius: 10px; padding: 10px 10px 10px 14px; margin-bottom: 6px; }
 .code-box pre { flex: 1; margin: 0; color: #E6EEF9; font: 12px/1.5 Consolas, "Cascadia Mono", monospace; white-space: pre-wrap; word-break: break-all; user-select: text; }
 .code-box .btn { background: rgba(255, 255, 255, .12); border-color: rgba(255, 255, 255, .25); color: #fff; }
+.agent-hero { border: 1px solid #DCE5F2; background: #F5F8FD; border-radius: 14px; padding: 16px; }
+.agent-steps { color: var(--navy); font-size: 14px; line-height: 1.5; margin-bottom: 12px; }
+.agent-steps span { color: var(--muted); margin: 0 4px; }
+.prompt-box { background: #fff; border: 1px solid #D5DEEA; border-radius: 10px; max-height: 230px; overflow: auto; padding: 12px 14px; }
+.prompt-box pre { margin: 0; font: 12.5px/1.55 var(--font); color: var(--ink); white-space: pre-wrap; word-break: break-word; user-select: text; }
+.agent-actions { display: flex; align-items: center; gap: 14px; margin-top: 12px; }
+.agent-actions small { color: var(--muted); }
+.btn.big { height: 44px; padding: 0 20px; font-size: 15px; }
+.conn-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 8px; }
+.conn-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+.conn-row strong { flex: 1; color: var(--ink); }
+.conn-dot { width: 10px; height: 10px; border-radius: 50%; background: #C6D0DE; }
+.conn-dot.conectado { background: var(--ok); }
+.conn-status { font-size: 12px; font-weight: 700; color: var(--muted); }
+.conn-status.conectado { color: var(--ok); }
+details.manual { margin-top: 22px; border-top: 1px solid var(--line); padding-top: 12px; }
+details.manual summary { cursor: pointer; font-weight: 700; color: var(--navy); padding: 6px 0; }
 .info-box { background: #F2F6FB; border-radius: 10px; padding: 12px 14px; color: var(--muted); font-size: 13px; line-height: 1.5; }
 .info-box code { background: #fff; padding: 1px 6px; border-radius: 5px; color: var(--navy); }
 
