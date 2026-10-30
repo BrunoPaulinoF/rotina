@@ -1,0 +1,63 @@
+{
+  "name": "rotina-desktop",
+  "productName": "Rotina Desktop",
+  "version": "1.0.0",
+  "description": "Assistente visual de rotina pessoal, 100% offline",
+  "main": "src/main/main.js",
+  "author": "Rotina Desktop",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "check": "node scripts/check.js",
+    "test": "node --test \"test/*.test.js\"",
+    "icons": "node scripts/make-icon.js",
+    "capture": "electron . --capture=capture --capture-exit",
+    "dist": "npm run check && npm test && electron-builder --win nsis --x64"
+  },
+  "build": {
+    "appId": "com.rotinadesktop.app",
+    "productName": "Rotina Desktop",
+    "copyright": "Rotina Desktop",
+    "directories": {
+      "output": "dist",
+      "buildResources": "assets"
+    },
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "electronLanguages": [
+      "pt-BR",
+      "en-US"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico",
+      "executableName": "RotinaDesktop"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Rotina Desktop",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false,
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerLanguages": [
+        "pt_BR"
+      ],
+      "language": "1046",
+      "artifactName": "RotinaDesktop-Setup-${version}.${ext}"
+    }
+  },
+  "devDependencies": {
+    "electron": "^45.1.0",
+    "electron-builder": "^26.18.0"
+  }
+}

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'">
+  <title>Alerta</title>
+  <link rel="stylesheet" href="base.css">
+  <style>
+    html, body { background: #fff; overflow: hidden; }
+    body { --c: var(--accent); height: 100vh; display: flex; flex-direction: column; border: 1px solid #D7E0EC; -webkit-app-region: drag; }
+    button { -webkit-app-region: no-drag; }
+    .head { display: flex; gap: 12px; align-items: center; padding: 14px 14px 10px; background: linear-gradient(120deg, var(--c), color-mix(in srgb, var(--c) 70%, #061633)); color: #fff; }
+    .ic { width: 42px; height: 42px; border-radius: 12px; background: rgba(255,255,255,.2); display: grid; place-items: center; flex: none; }
+    .tx { flex: 1; min-width: 0; }
+    .tx strong { display: block; font-size: 15.5px; line-height: 1.25; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+    .tx small { display: block; font-size: 12px; opacity: .9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .x { border: 0; background: transparent; color: #fff; opacity: .8; width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; align-self: flex-start; }
+    .x:hover { background: rgba(255,255,255,.2); opacity: 1; }
+    .body { flex: 1; display: flex; align-items: center; gap: 8px; padding: 10px 14px; }
+    .body .muted { color: var(--muted); font-size: 12px; flex: 1; }
+    .timer { height: 3px; background: var(--c); transition: width linear; }
+  </style>
+</head>
+<body>
+  <div class="head"><div class="ic" id="ic"></div><div class="tx"><strong id="title"></strong><small id="body"></small></div><button class="x" id="x" title="Fechar"></button></div>
+  <div class="body"><span class="muted" id="hint"></span><button class="btn small" id="s1"></button><button class="btn small" id="s2"></button><button class="btn small primary" id="ok">OK</button></div>
+  <div class="timer" id="timer" style="width:100%"></div>
+  <script src="../shared/engine.js"></script>
+  <script src="common.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
