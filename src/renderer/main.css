@@ -43,24 +43,6 @@ body { display: flex; flex-direction: column; overflow: hidden; }
 }
 .state-strip.paused { background: #EEF1F6; color: var(--navy); border-color: var(--line); }
 
-/* ---------- banner de alerta ---------- */
-.banner {
-  --c: var(--accent);
-  display: flex; align-items: center; gap: 14px;
-  margin: 12px 24px 0; padding: 12px 14px 12px 16px;
-  border-radius: 14px;
-  background: linear-gradient(100deg, var(--c), color-mix(in srgb, var(--c) 72%, #000));
-  color: #fff; box-shadow: var(--shadow);
-  animation: slideIn .35s ease-out;
-}
-.banner .b-icon { width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; background: rgba(255, 255, 255, .2); }
-.banner .b-text { flex: 1; min-width: 0; }
-.banner strong { display: block; font-size: 16px; }
-.banner small { display: block; opacity: .9; white-space: pre-line; }
-.banner .btn { background: rgba(255, 255, 255, .16); border-color: rgba(255, 255, 255, .35); color: #fff; }
-.banner .btn:hover { background: rgba(255, 255, 255, .28); }
-@keyframes slideIn { from { transform: translateY(-8px); opacity: 0; } to { transform: none; opacity: 1; } }
-
 /* ---------- layout ---------- */
 main { flex: 1; min-height: 0; position: relative; }
 .view { display: none; height: 100%; overflow: auto; padding: 18px 24px 20px; }

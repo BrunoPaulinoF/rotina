@@ -146,29 +146,6 @@
   $('#btn-floating').addEventListener('click', () => api.action('floating:toggle'));
   $('#q-snooze').addEventListener('click', () => api.action('snooze', {}).then(() => toast('Alerta adiado')));
 
-  // ---------- banner de alerta ----------
-  let bannerId = null;
-  function renderBanner(alert) {
-    const el = $('#banner');
-    if (!alert) {
-      el.classList.add('hidden');
-      bannerId = null;
-      return;
-    }
-    if (alert.id === bannerId) return;
-    bannerId = alert.id;
-    const m = App.config.settings.alerts.snoozeMinutes;
-    el.style.setProperty('--c', alert.item.color);
-    el.innerHTML =
-      '<div class="b-icon">' + icon(alert.item.icon, 24) + '</div>' +
-      '<div class="b-text"><strong>' + esc(alert.title) + '</strong><small>' + esc(alert.body) + '</small></div>' +
-      '<button class="btn" data-snooze>' + icon('clock', 16) + 'Adiar ' + m + ' min</button>' +
-      '<button class="btn" data-ok>' + icon('check', 16) + 'OK</button>';
-    el.classList.remove('hidden');
-    el.querySelector('[data-snooze]').onclick = () => api.action('snooze', {});
-    el.querySelector('[data-ok]').onclick = () => api.action('dismissAlert');
-  }
-
   // ---------- relógio e cartões ----------
   function renderClock(s) {
     const c = UI.clockParts(s.now);
@@ -566,7 +543,6 @@
   function onStatus(s) {
     App.status = s;
     renderTopActions(s);
-    renderBanner(s.alert);
     if (App.lastDateKey && App.lastDateKey !== s.dateKey) {
       // virou o dia: acompanha o novo dia se estava vendo "hoje"
       if (App.viewDate === App.lastDateKey) App.viewDate = s.dateKey;
@@ -611,16 +587,20 @@
       const editing = App.view === 'config' && document.activeElement && document.activeElement.closest('#config-panel, #modal-root');
       afterConfigChange(!editing);
     });
-    api.on('alert', (a) => renderBanner(a));
-    api.on('alert:dismiss', () => renderBanner(null));
     api.on('history', async () => {
       await loadHist();
       paintMarks();
       if (App.view === 'relatorios') App.renderReport();
     });
-    api.on('navigate', (v) => showView(v));
+    // Destino "config:geral" abre um painel específico das Configurações.
+    const goTo = (target) => {
+      const [view, panel] = String(target).split(':');
+      if (panel) window.__showSettings(panel);
+      else showView(view);
+    };
+    api.on('navigate', goTo);
     const hash = location.hash.replace('#', '');
-    if (hash) showView(hash);
+    if (hash) goTo(hash);
   }
 
   init();

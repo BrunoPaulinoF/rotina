@@ -174,7 +174,6 @@ function normalizeConfig(input) {
         volume: num(sa.volume, da.volume, 0, 1),
         advanceEnabled: bool(sa.advanceEnabled, da.advanceEnabled),
         advanceMinutes: Math.round(num(sa.advanceMinutes, da.advanceMinutes, 1, 120)),
-        windowsNotification: bool(sa.windowsNotification, da.windowsNotification),
         popup: bool(sa.popup, da.popup),
         popupSeconds: Math.round(num(sa.popupSeconds, da.popupSeconds, 5, 300)),
         snoozeMinutes: Math.round(num(sa.snoozeMinutes, da.snoozeMinutes, 1, 120))

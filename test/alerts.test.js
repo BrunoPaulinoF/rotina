@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { AlertService } = require('../src/main/alerts');
+const { AlertService, CardQueue } = require('../src/main/alerts');
 const { createDefaultConfig, createDefaultState } = require('../src/main/defaults');
 const { normalizeConfig } = require('../src/main/store');
 
@@ -94,6 +94,77 @@ test('adiar alerta dispara novamente depois do tempo escolhido', () => {
   assert.equal(s.delivered.length, 2);
   assert.equal(s.delivered[1].type, 'snooze');
   assert.equal(s.state.snoozes.length, 0);
+});
+
+test('atividade curta: início e aviso da próxima no mesmo instante viram um único cartão', () => {
+  const s = setup(at('07:14', 50));
+  s.svc.tick();
+  s.run(at('07:15', 5));
+  assert.deepEqual(s.delivered.map((a) => a.type + ':' + a.item.id), ['start:levar-creche']);
+  assert.deepEqual(s.delivered[0].notes.map((n) => n.text), ['Depois: Caminhada às 07:20']);
+});
+
+test('cartão recebe as partes separadas por tipo de alerta', () => {
+  const s = setup(at('08:24', 50));
+  s.svc.tick();
+  s.run(at('08:30', 5));
+  const [adv, start] = s.delivered;
+  assert.deepEqual([adv.kicker, adv.heading, adv.time, adv.canSnooze], ['Em 5 min', 'Foco 1: programação', 'Começa às 08:30', false]);
+  assert.deepEqual(adv.notes.map((n) => n.text), ['Encerre: Mensagens e e-mails']);
+  assert.deepEqual([start.kicker, start.heading, start.time, start.canSnooze], ['Agora', 'Foco 1: programação', '08:30 – 10:30', true]);
+  assert.match(start.detail, /tarefa mais importante/);
+});
+
+test('aviso antecipado não pode ser adiado nem substitui o alerta adiável', () => {
+  const s = setup(at('07:59', 50));
+  s.svc.tick();
+  s.run(at('08:00', 5)); // início de Mensagens
+  s.run(at('08:25', 5)); // aviso antecipado do Foco 1
+  assert.equal(s.delivered[s.delivered.length - 1].type, 'advance');
+  assert.equal(s.state.lastAlert.item.id, 'mensagens');
+  assert.equal(s.svc.snooze(5, s.delivered[s.delivered.length - 1]), null);
+  assert.equal(s.state.snoozes.length, 0);
+  assert.equal(s.svc.canSnooze(), true);
+});
+
+test('alerta adiado não volta se a atividade já acabou', () => {
+  const s = setup(at('08:29', 50));
+  s.svc.tick();
+  s.run(at('08:30', 5));
+  const foco = s.state.lastAlert;
+  s.svc.snooze(120); // volta às 10:30:05, depois do fim do Foco 1
+  s.run(at('10:31'));
+  assert.ok(!s.delivered.some((a) => a.type === 'snooze'));
+  // E o botão "Adiar" não oferece adiar uma atividade que já acabou.
+  s.state.lastAlert = Object.assign({}, foco, { firedAt: at('10:29') });
+  assert.equal(s.svc.canSnooze(), false);
+});
+
+test('alerta adiado volta como lembrete, com a atividade em destaque', () => {
+  const s = setup(at('08:29', 50));
+  s.svc.tick();
+  s.run(at('08:30', 5));
+  s.svc.snooze(5);
+  s.run(at('08:35', 10));
+  const r = s.delivered[s.delivered.length - 1];
+  assert.deepEqual([r.type, r.kicker, r.heading, r.title], ['snooze', 'Lembrete', 'Foco 1: programação', 'Lembrete: Foco 1: programação']);
+});
+
+test('fila do cartão: um aviso por vez e descarta o que ficou velho', () => {
+  const q = new CardQueue();
+  const item = (key, startMs, endMs) => ({ key, startMs, endMs });
+  q.push({ id: 'velho', type: 'start', item: item('a', 0, 100) });
+  q.push({ id: 'aviso-vencido', type: 'advance', item: item('b', 150, 300) });
+  q.push({ id: 'atual', type: 'start', item: item('c', 100, 500) });
+  q.push({ id: 'sem-prazo', type: 'notice' });
+  assert.equal(q.next(200).id, 'atual');
+  assert.equal(q.next(200).id, 'sem-prazo');
+  assert.equal(q.next(200), null);
+  // O início substitui o aviso antecipado da mesma atividade que ainda estava na fila.
+  q.push({ id: 'aviso', type: 'advance', item: item('d', 600, 900) });
+  q.push({ id: 'inicio', type: 'start', item: item('d', 600, 900) });
+  assert.equal(q.size, 1);
+  assert.equal(q.next(610).id, 'inicio');
 });
 
 test('alertas desativados para uma atividade', () => {

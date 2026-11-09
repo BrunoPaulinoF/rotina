@@ -4,14 +4,14 @@
  * O motor roda aqui (não nas janelas), então os alertas continuam com tudo minimizado ou fechado na bandeja.
  */
 
-const { app, BrowserWindow, ipcMain, Tray, Menu, Notification, screen, powerMonitor, dialog, shell, clipboard, net } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, screen, powerMonitor, dialog, shell, clipboard, net } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
 const engine = require('../shared/engine');
 const { createDefaultConfig } = require('./defaults');
 const { JsonStore, normalizeConfig, normalizeState } = require('./store');
-const { AlertService } = require('./alerts');
+const { AlertService, CardQueue, describe } = require('./alerts');
 const { Updater } = require('./updater');
 const { detectConnections, buildAgentPrompt, buildAgentGuide } = require('./agent-setup');
 const { startInbox } = require('./inbox');
@@ -63,10 +63,8 @@ let audioIdleTimer = null;
 let popupTimer = null;
 let tickTimer = null;
 let quitting = false;
-let activeAlert = null;
 let lastTrayLabel = '';
 let saveStateTimer = null;
-const notifications = new Set();
 
 // ---------- log ----------
 function logFile() {
@@ -268,12 +266,15 @@ function setupUpdater() {
     onState: (s) => {
       broadcast('update', s);
       rebuildTrayMenu();
-      if (s.status === 'available' && s.latest !== updateNotifiedVersion && Notification.isSupported()) {
+      if (s.status === 'available' && s.latest !== updateNotifiedVersion) {
         updateNotifiedVersion = s.latest;
-        const n = new Notification({ title: 'Rotina Desktop ' + s.latest + ' disponível', body: 'Clique para ver e atualizar. Suas configurações são mantidas.', icon: path.join(ASSETS, 'icon.png'), silent: true });
-        notifications.add(n);
-        n.on('click', () => showMain('config'));
-        n.show();
+        showCard(noticeCard({
+          kicker: 'Atualização',
+          icon: 'download',
+          heading: 'Versão ' + s.latest + ' disponível',
+          detail: 'Atualize quando quiser. Sua rotina e suas configurações são mantidas.',
+          action: { label: 'Ver atualização', view: 'config:geral' }
+        }));
       }
     }
   });
@@ -358,13 +359,11 @@ function revealExtension() {
 function buildStatus() {
   const t = now();
   const s = engine.getStatus(config, t);
-  const alertVisible = activeAlert && !activeAlert.dismissed && t - activeAlert.firedAt < 3 * 60000 ? activeAlert : null;
   return Object.assign(s, {
     paused: state.paused,
     muteUntil: state.muteUntil > t ? state.muteUntil : 0,
     alertsEnabled: config.settings.alerts.enabled,
-    alert: alertVisible,
-    canSnooze: !!(state.lastAlert && t - state.lastAlert.firedAt < 60 * 60000),
+    canSnooze: alerts.canSnooze(),
     snoozes: state.snoozes.map((x) => ({ at: x.at, title: x.alert.title })),
     floatingVisible: !!(floatingWindow && !floatingWindow.isDestroyed() && floatingWindow.isVisible()),
     simulated: clockOffset !== 0,
@@ -406,27 +405,11 @@ function scheduleTick() {
 
 // ---------- alertas ----------
 function deliverAlert(alert) {
-  activeAlert = Object.assign({}, alert, { dismissed: false });
   const a = config.settings.alerts;
   if (!alert.muted) playSound(alert.sound === 'advance' ? a.soundAdvance : a.soundStart);
-  if (a.windowsNotification && Notification.isSupported()) {
-    const n = new Notification({ title: alert.title, body: alert.body, icon: path.join(ASSETS, 'icon.png'), silent: true });
-    notifications.add(n);
-    n.on('click', () => showMain());
-    n.on('close', () => notifications.delete(n));
-    setTimeout(() => notifications.delete(n), 5 * 60000);
-    n.show();
-  }
-  // A pílula é pequena demais para botões: o aviso com "Adiar" vai sempre no cartão.
-  if (a.popup) showPopup(activeAlert);
-  broadcast('alert', activeAlert);
-  pushStatus(true);
-}
-
-function dismissAlert() {
-  if (activeAlert) activeAlert.dismissed = true;
-  closePopup();
-  broadcast('alert:dismiss', null);
+  if (a.popup) showCard(alert);
+  // A pílula pisca junto com o cartão.
+  broadcast('alert', alert);
   pushStatus(true);
 }
 
@@ -519,7 +502,7 @@ function createMainWindow(view) {
     if (!quitting && config.settings.general.closeToTray && !state.trayHintShown) {
       state.trayHintShown = true;
       saveStateNow();
-      if (tray) tray.displayBalloon({ title: 'Rotina Desktop continua ativo', content: 'Os alertas seguem funcionando. Abra pelo ícone perto do relógio.', iconType: 'info' });
+      showCard(noticeCard({ kicker: 'Continua ativo', icon: 'clock', heading: 'O Rotina Desktop segue rodando', detail: 'Os alertas continuam funcionando. Para abrir de novo, use o ícone perto do relógio.' }));
     }
   });
   mainWindow.on('closed', () => {
@@ -637,18 +620,48 @@ function setFloatingEnabled(enabled) {
   }
 }
 
-function showPopup(alert) {
-  closePopup();
-  // Não cobre a pílula quando ela está no canto inferior direito.
-  const b = cornerBounds(380, 168);
+// Cartão do app: o único aviso visual. Um por vez, em fila, sem roubar o foco.
+const CARD_WIDTH = 424; // inclui a margem transparente em volta, onde fica a sombra
+let cardCurrent = null;
+const cardQueue = new CardQueue();
+
+function noticeCard({ kicker, icon, heading, detail, action }) {
+  const id = 'aviso|' + Date.now();
+  return { id, key: id, type: 'notice', kicker, heading, detail, notes: [], canSnooze: false, action: action || null, item: { color: '#0F2D5C', icon } };
+}
+
+function showCard(card) {
+  if (cardCurrent) {
+    cardQueue.push(card);
+    if (popupWindow && !popupWindow.isDestroyed()) popupWindow.webContents.send('popup:queued', cardQueue.size);
+    return;
+  }
+  openCard(card);
+}
+
+function sendCard() {
+  if (!popupWindow || popupWindow.isDestroyed() || !cardCurrent) return;
+  const a = config.settings.alerts;
+  popupWindow.webContents.send('popup:data', { card: cardCurrent, seconds: a.popupSeconds, snoozeMinutes: a.snoozeMinutes, queued: cardQueue.size });
+}
+
+function openCard(card) {
+  cardCurrent = card;
+  if (popupWindow && !popupWindow.isDestroyed()) {
+    if (!popupWindow.webContents.isLoading()) sendCard();
+    return;
+  }
+  const b = cornerBounds(CARD_WIDTH, 220);
   popupWindow = new BrowserWindow({
     x: b.x,
     y: b.y,
     width: b.width,
     height: b.height,
     frame: false,
+    transparent: true,
+    hasShadow: false,
     resizable: false,
-    movable: true,
+    movable: false,
     maximizable: false,
     minimizable: false,
     fullscreenable: false,
@@ -656,25 +669,36 @@ function showPopup(alert) {
     alwaysOnTop: true,
     focusable: false,
     show: false,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#00000000',
     webPreferences: webPrefs()
   });
   popupWindow.setAlwaysOnTop(true, 'pop-up-menu');
   popupWindow.loadFile(path.join(RENDERER, 'popup.html'));
-  popupWindow.webContents.once('did-finish-load', () => {
-    if (!popupWindow || popupWindow.isDestroyed()) return;
-    popupWindow.webContents.send('popup:data', { alert, seconds: config.settings.alerts.popupSeconds, snoozeMinutes: config.settings.alerts.snoozeMinutes });
-    popupWindow.showInactive();
-  });
+  popupWindow.webContents.once('did-finish-load', sendCard);
   popupWindow.on('closed', () => {
     popupWindow = null;
   });
-  clearTimeout(popupTimer);
-  popupTimer = setTimeout(closePopup, config.settings.alerts.popupSeconds * 1000);
 }
 
-function closePopup() {
+/** O cartão já desenhou e informou a própria altura: posiciona, mostra e inicia o tempo. */
+function cardReady(height) {
+  if (!popupWindow || popupWindow.isDestroyed() || !cardCurrent) return;
+  popupWindow.setBounds(cornerBounds(CARD_WIDTH, Math.ceil(height)));
+  popupWindow.showInactive();
+  startCardTimer(config.settings.alerts.popupSeconds * 1000);
+}
+
+function startCardTimer(ms) {
   clearTimeout(popupTimer);
+  popupTimer = setTimeout(closeCard, Math.max(500, ms));
+}
+
+/** Fecha o cartão atual e mostra o próximo da fila, se houver. */
+function closeCard() {
+  clearTimeout(popupTimer);
+  cardCurrent = null;
+  const next = cardQueue.next(now());
+  if (next) return openCard(next);
   if (popupWindow && !popupWindow.isDestroyed()) popupWindow.destroy();
   popupWindow = null;
 }
@@ -753,10 +777,12 @@ function unmute() {
   pushStatus(true);
 }
 
-function snooze(minutes) {
-  const at = alerts.snooze(minutes || config.settings.alerts.snoozeMinutes);
-  dismissAlert();
+function snooze(minutes, fromCard) {
+  const shown = cardCurrent;
+  const at = alerts.snooze(minutes || config.settings.alerts.snoozeMinutes, fromCard ? shown : undefined);
+  if (fromCard || (shown && state.lastAlert && shown.key === state.lastAlert.key)) closeCard();
   rebuildTrayMenu();
+  pushStatus(true);
   return at;
 }
 
@@ -765,7 +791,7 @@ function rebuildTrayMenu() {
   const t = now();
   const s = engine.getStatus(config, t);
   const muted = state.muteUntil > t;
-  const canSnooze = !!(state.lastAlert && t - state.lastAlert.firedAt < 60 * 60000);
+  const canSnooze = alerts.canSnooze();
   const floatingOn = !!(floatingWindow && !floatingWindow.isDestroyed());
   const label = s.primary ? 'Agora: ' + s.primary.title + ' (até ' + s.primary.endLabel + ')' : 'Tempo livre';
   const today = history ? history.day(engine.dateKey(t), t) : null;
@@ -847,7 +873,7 @@ function registerIpc() {
       case 'resume': return setPaused(false);
       case 'mute': return mute(p.minutes || 30);
       case 'unmute': return unmute();
-      case 'snooze': return snooze(p.minutes);
+      case 'snooze': return snooze(p.minutes, p.fromCard);
       case 'checkin:set': {
         try {
           return { ok: true, item: setCheckin(p.dateKey || engine.dateKey(now()), p.id, p.status || null, p.origem || 'app') };
@@ -869,7 +895,20 @@ function registerIpc() {
         const [from, to] = p.de ? [p.de, p.ate] : periodRange(p.periodo || 'semana', now());
         return history.report(from, to, now(), config.settings.checkin.goal);
       }
-      case 'dismissAlert': return dismissAlert();
+      case 'dismissAlert': return closeCard();
+      case 'popup:ready': return cardReady(p.height);
+      case 'popup:hold': {
+        // Mouse sobre o cartão: o tempo para; ao sair, continua de onde parou.
+        if (!cardCurrent) return null;
+        if (p.hold) clearTimeout(popupTimer);
+        else startCardTimer(p.remainingMs);
+        return null;
+      }
+      case 'popup:open': {
+        const view = cardCurrent && cardCurrent.action ? cardCurrent.action.view : undefined;
+        showMain(view);
+        return closeCard();
+      }
       case 'openMain': return showMain(p.view);
       case 'floating:toggle': return setFloatingEnabled(!(floatingWindow && !floatingWindow.isDestroyed()));
       case 'floating:hide': return setFloatingEnabled(false);
@@ -883,12 +922,8 @@ function registerIpc() {
         const s = engine.getStatus(config, now());
         const it = s.primary || s.next;
         if (!it) return null;
-        return deliverAlert({
-          id: 'teste|' + now(), key: 'teste|' + now(), type: 'start', at: now(), firedAt: now(),
-          title: 'Teste: ' + it.title, body: it.startLabel + ' – ' + it.endLabel + (it.subtitle ? ' · ' + it.subtitle : ''),
-          item: { id: it.id, key: it.key, title: it.title, color: it.color, icon: it.icon, startLabel: it.startLabel, endLabel: it.endLabel },
-          sound: 'start', muted: state.muteUntil > now()
-        });
+        const alert = describe({ type: 'start', at: now(), item: it, others: s.others, key: 'teste|' + now() }, config, now());
+        return deliverAlert(Object.assign(alert, { kicker: 'Teste', title: 'Teste: ' + it.title, canSnooze: false, muted: state.muteUntil > now() }));
       }
       case 'chooseSound': {
         const win = BrowserWindow.fromWebContents(e.sender);
@@ -979,10 +1014,46 @@ async function runCapture(dir) {
   }
   const status = engine.getStatus(config, now());
   const it = status.primary || status.next;
-  if (it) {
-    showPopup({ id: 'cap', key: 'cap', type: 'start', at: now(), firedAt: now(), title: 'Agora: ' + it.title, body: it.startLabel + ' – ' + it.endLabel, item: { id: it.id, key: it.key, title: it.title, color: it.color, icon: it.icon, startLabel: it.startLabel, endLabel: it.endLabel } });
+  const shotCard = async (card, name) => {
+    showCard(card);
     await wait(1500);
-    if (popupWindow) await shot(popupWindow, 'popup');
+    if (popupWindow) await shot(popupWindow, name);
+    closeCard();
+    await wait(200);
+  };
+  if (it) await shotCard(describe({ type: 'start', at: now(), item: it, others: status.others, key: 'cap1' }, config, now()), 'popup');
+  if (status.next) await shotCard(describe({ type: 'advance', at: now(), item: status.next, minutes: config.settings.alerts.advanceMinutes, current: status.primary, key: 'cap2' }, config, now()), 'popup-antecipado');
+  await shotCard(noticeCard({ kicker: 'Atualização', icon: 'download', heading: 'Versão 9.9.9 disponível', detail: 'Atualize quando quiser. Sua rotina e suas configurações são mantidas.', action: { label: 'Ver atualização', view: 'config:geral' } }), 'popup-aviso');
+  // Verifica o comportamento do cartão com cliques reais nos botões.
+  if (it) {
+    const js = (code) => popupWindow.webContents.executeJavaScript(code);
+    const alertOf = (key) => describe({ type: 'start', at: now(), item: it, others: [], key }, config, now());
+    showCard(alertOf('ver1'));
+    await wait(800);
+    await js('document.querySelector("[data-snooze]").click()');
+    await wait(400);
+    log('Verificação adiar: fechou=' + !cardCurrent + ' adiados=' + state.snoozes.length + ' alvo=' + (state.snoozes[0] ? state.snoozes[0].alert.key : '-'));
+    state.snoozes = [];
+
+    showCard(alertOf('ver2'));
+    showCard(noticeCard({ kicker: 'Fila', icon: 'clock', heading: 'Segundo aviso', detail: 'Aparece depois do primeiro.', action: { label: 'Abrir', view: 'relatorios' } }));
+    await wait(800);
+    log('Verificação fila: atual=' + cardCurrent.key + ' naFila=' + cardQueue.size + ' textoMais="' + (await js('document.getElementById("more").textContent')) + '"');
+    await js('document.querySelector(".foot .primary").click()');
+    await wait(800);
+    log('Verificação fila: depois de Entendi, atual=' + cardCurrent.type + ' naFila=' + cardQueue.size);
+
+    await js('document.getElementById("card").dispatchEvent(new MouseEvent("mouseenter"))');
+    await wait(100);
+    startCardTimer(600);
+    await js('document.getElementById("card").dispatchEvent(new MouseEvent("mouseenter"))');
+    await wait(1200);
+    log('Verificação mouse em cima: continua aberto=' + !!cardCurrent);
+    await js('document.getElementById("card").dispatchEvent(new MouseEvent("mouseleave"))');
+
+    await js('document.querySelector(".foot .primary").click()');
+    await wait(1200);
+    log('Verificação abrir: fechou=' + !cardCurrent + ' tela=' + (await mainWindow.webContents.executeJavaScript('window.App.view')));
   }
   log('Capturas salvas em ' + out);
   if (process.argv.includes('--capture-exit')) app.quit();

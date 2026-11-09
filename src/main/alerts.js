@@ -15,32 +15,78 @@ function describe(event, config, now) {
   const it = event.item;
   const range = it.startLabel + ' – ' + it.endLabel;
   const status = engine.getStatus(config, event.at + 1);
-  const after = status.next ? 'Depois: ' + status.next.title + ' às ' + engine.fmtHM(new Date(status.nextAt).getHours() * 60 + new Date(status.nextAt).getMinutes()) : '';
-  let title;
-  let body;
+  const nextTime = status.next ? engine.fmtHM(new Date(status.nextAt).getHours() * 60 + new Date(status.nextAt).getMinutes()) : '';
+  const after = status.next ? 'Depois: ' + status.next.title + ' às ' + nextTime : '';
+  let kicker;
+  let time;
+  let detail = it.subtitle || '';
+  const notes = [];
   if (event.type === 'advance') {
-    title = 'Em ' + event.minutes + ' min: ' + it.title;
-    body = 'Começa às ' + it.startLabel + (event.current && event.current.key !== it.key ? ' · encerre "' + event.current.title + '"' : '');
+    kicker = 'Em ' + event.minutes + ' min';
+    time = 'Começa às ' + it.startLabel;
+    if (event.current && event.current.key !== it.key) notes.push({ icon: 'flag', text: 'Encerre: ' + event.current.title });
   } else if (event.type === 'resume') {
-    title = 'De volta: ' + it.title;
-    body = (event.ended ? event.ended.title + ' terminou · ' : '') + 'até ' + it.endLabel;
+    kicker = 'De volta';
+    time = 'Até ' + it.endLabel;
+    detail = event.ended ? event.ended.title + ' terminou' : detail;
   } else {
-    title = 'Agora: ' + it.title;
-    body = range + (it.subtitle ? ' · ' + it.subtitle : '');
-    if (event.others && event.others.length) body += '\nSimultâneo: ' + event.others.map((o) => o.title).join(', ');
+    kicker = 'Agora';
+    time = range;
+    if (event.others && event.others.length) notes.push({ icon: 'users', text: 'Simultâneo: ' + event.others.map((o) => o.title).join(', ') });
   }
-  if (event.type !== 'advance' && after) body += '\n' + after;
+  if (event.type !== 'advance' && after) notes.push({ icon: 'chevronRight', text: after });
   return {
     id: event.key + '|' + now,
     key: event.key,
     type: event.type,
     at: event.at,
     firedAt: now,
-    title,
-    body,
-    item: { id: it.id, key: it.key, title: it.title, color: it.color, icon: it.icon, startLabel: it.startLabel, endLabel: it.endLabel },
+    // Texto corrido, usado no log e na lista de alertas adiados.
+    title: kicker + ': ' + it.title,
+    body: [time, detail].filter(Boolean).join(' · ') + notes.map((n) => '\n' + n.text).join(''),
+    // Partes separadas, usadas no cartão de alerta.
+    kicker,
+    heading: it.title,
+    time,
+    detail,
+    notes,
+    canSnooze: event.type !== 'advance',
+    nextKey: event.type !== 'advance' && status.next ? status.next.key : null,
+    item: { id: it.id, key: it.key, title: it.title, color: it.color, icon: it.icon, startLabel: it.startLabel, endLabel: it.endLabel, startMs: it.start, endMs: it.end },
     sound: event.type === 'advance' ? 'advance' : 'start'
   };
+}
+
+/**
+ * Fila do cartão de alerta: mostra um aviso por vez, sem um apagar o outro.
+ * Ao chegar a vez de um aviso, descarta o que já ficou velho (a atividade já começou ou já acabou).
+ */
+class CardQueue {
+  constructor() {
+    this.items = [];
+  }
+
+  get size() {
+    return this.items.length;
+  }
+
+  push(card) {
+    // O início de uma atividade torna inútil o aviso antecipado dela que ainda estava na fila.
+    if (card.type !== 'advance' && card.item) {
+      this.items = this.items.filter((c) => !(c.type === 'advance' && c.item && c.item.key === card.item.key));
+    }
+    this.items.push(card);
+  }
+
+  next(now) {
+    while (this.items.length) {
+      const card = this.items.shift();
+      const it = card.item || {};
+      const stale = (card.type === 'advance' && it.startMs <= now) || (it.endMs != null && it.endMs <= now);
+      if (!stale) return card;
+    }
+    return null;
+  }
 }
 
 class AlertService {
@@ -89,6 +135,13 @@ class AlertService {
       due.push(describe(ev, config, now));
     }
 
+    // Quando uma atividade começa, o cartão já diz "Depois: ...": o aviso antecipado
+    // dessa próxima, no mesmo instante, seria repetição (e tocaria dois sons).
+    const covered = new Set(due.filter((d) => d.nextKey).map((d) => d.nextKey));
+    for (let i = due.length - 1; i >= 0; i--) {
+      if (due[i].type === 'advance' && covered.has(due[i].item.key)) due.splice(i, 1);
+    }
+
     // Alertas adiados
     if (this.state.snoozes.length) {
       const keep = [];
@@ -99,8 +152,10 @@ class AlertService {
           continue;
         }
         changed = true;
-        if (now - s.at <= GRACE_MS) {
-          due.push(Object.assign({}, s.alert, { id: s.alert.key + '|snooze|' + now, type: 'snooze', firedAt: now, title: '⏰ ' + s.alert.title.replace(/^⏰ /, ''), sound: 'start' }));
+        const ended = s.alert.item && s.alert.item.endMs != null && s.alert.item.endMs <= now;
+        if (now - s.at <= GRACE_MS && !ended) {
+          const heading = s.alert.heading || (s.alert.item && s.alert.item.title) || s.alert.title;
+          due.push(Object.assign({}, s.alert, { id: s.alert.key + '|snooze|' + now, type: 'snooze', firedAt: now, kicker: 'Lembrete', title: 'Lembrete: ' + heading, heading, canSnooze: true, sound: 'start' }));
         }
       }
       if (changed) {
@@ -116,7 +171,8 @@ class AlertService {
     if (this.state.paused || !a.enabled) return delivered;
     for (const alert of due) {
       alert.muted = this.isMuted(now);
-      this.state.lastAlert = alert;
+      // Aviso antecipado não se adia: voltaria dizendo "em 5 min" com a atividade já começada.
+      if (alert.canSnooze !== false) this.state.lastAlert = alert;
       delivered.push(alert);
       this.log('Alerta: ' + alert.title + (alert.muted ? ' (silenciado)' : ''));
       this.deliver(alert);
@@ -125,9 +181,18 @@ class AlertService {
     return delivered;
   }
 
+  /** O último alerta ainda pode ser adiado? (recente e com a atividade em andamento) */
+  canSnooze() {
+    const last = this.state.lastAlert;
+    if (!last || last.canSnooze === false) return false;
+    const now = this.now();
+    const endMs = last.item && last.item.endMs;
+    return now - last.firedAt < 60 * 60000 && (endMs == null || endMs > now);
+  }
+
   snooze(minutes, alert) {
     const target = alert || this.state.lastAlert;
-    if (!target) return null;
+    if (!target || target.canSnooze === false) return null;
     const at = this.now() + Math.max(1, Number(minutes) || 5) * 60000;
     this.state.snoozes = this.state.snoozes.filter((s) => s.alert.key !== target.key);
     this.state.snoozes.push({ at, alert: target });
@@ -142,4 +207,4 @@ class AlertService {
   }
 }
 
-module.exports = { AlertService, GRACE_MS, MAX_GAP_MS };
+module.exports = { AlertService, CardQueue, describe, GRACE_MS, MAX_GAP_MS };

@@ -7,6 +7,7 @@ Assistente visual de rotina pessoal para Windows 10/11. Mostra a atividade atual
 - **Instalar:** baixe o instalador da [última release](https://github.com/BrunoPaulinoF/rotina/releases/latest) (ou gere com `npm run dist`).
 - **Bandeja do Windows:** fechar a janela mantém o app rodando (alertas continuam). Clique com o botão direito no ícone para pausar, silenciar, adiar o último alerta, abrir a janela flutuante ou sair.
 - **Janela flutuante:** pílula pequena, sempre acima das outras janelas, com a atividade atual e o tempo restante. Fica fixa em cima no centro (ou embaixo no centro, ou em um dos cantos — Configurações → Geral e backup → Posição na tela). Os botões abrir/ocultar ficam à direita; cliques no resto da pílula passam para o que está atrás.
+- **Cartão de alerta:** único aviso visual do app (nenhuma notificação do Windows). Aparece no canto inferior direito sem roubar o foco, um por vez, com "Depois" e "Simultâneo", botões para adiar e tempo que para com o mouse em cima. Clicar no cartão abre o app.
 - **Configurações:** atividades, categorias e cores, alertas e sons, tarefas da semana, exceções de datas, regras/listas, inicialização com o Windows e backup.
 
 ## Meta e produtividade (✓ fiz / ✗ não fiz)
