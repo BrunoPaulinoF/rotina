@@ -303,10 +303,9 @@
       row('Avisar antes de cada atividade', 'Pode ser desativado por atividade em "Atividades".', sw('data-a="advanceEnabled"', a.advanceEnabled)) +
       row('Minutos de antecedência', '', '<input type="number" min="1" max="120" value="' + a.advanceMinutes + '" data-a="advanceMinutes"> min') +
 
-      '<div class="section-title">Avisos visuais</div>' +
-      row('Notificação do Windows', 'Aparece na central de notificações.', sw('data-a="windowsNotification"', a.windowsNotification)) +
-      row('Cartão de alerta com botão "Adiar"', 'Pequeno cartão no canto inferior direito, sem roubar o foco. A janela flutuante também pisca.', sw('data-a="popup"', a.popup)) +
-      row('Tempo do cartão na tela', '', '<input type="number" min="5" max="300" value="' + a.popupSeconds + '" data-a="popupSeconds"> s') +
+      '<div class="section-title">Aviso na tela</div>' +
+      row('Mostrar cartão de alerta', 'Cartão no canto inferior direito, sem roubar o foco, e a janela flutuante pisca. Desligado, os alertas ficam só no som e na janela flutuante.', sw('data-a="popup"', a.popup)) +
+      row('Tempo do cartão na tela', 'Com o mouse em cima, o tempo para.', '<input type="number" min="5" max="300" value="' + a.popupSeconds + '" data-a="popupSeconds"> s') +
       row('Adiar alerta por', 'Usado nos botões "Adiar".', '<input type="number" min="1" max="120" value="' + a.snoozeMinutes + '" data-a="snoozeMinutes"> min') +
       (s.snoozes.length ? '<div class="info-box">Alertas adiados: ' + s.snoozes.map((x) => esc(x.title) + ' às ' + UI.timeLabel(x.at)).join(' · ') + '</div>' : '') +
       '</div>';

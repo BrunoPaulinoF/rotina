@@ -6,25 +6,56 @@
   <title>Alerta</title>
   <link rel="stylesheet" href="base.css">
   <style>
-    html, body { background: #fff; overflow: hidden; }
-    body { --c: var(--accent); height: 100vh; display: flex; flex-direction: column; border: 1px solid #D7E0EC; -webkit-app-region: drag; }
-    button { -webkit-app-region: no-drag; }
-    .head { display: flex; gap: 12px; align-items: center; padding: 14px 14px 10px; background: linear-gradient(120deg, var(--c), color-mix(in srgb, var(--c) 70%, #061633)); color: #fff; }
-    .ic { width: 42px; height: 42px; border-radius: 12px; background: rgba(255,255,255,.2); display: grid; place-items: center; flex: none; }
-    .tx { flex: 1; min-width: 0; }
-    .tx strong { display: block; font-size: 15.5px; line-height: 1.25; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-    .tx small { display: block; font-size: 12px; opacity: .9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .x { border: 0; background: transparent; color: #fff; opacity: .8; width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; align-self: flex-start; }
-    .x:hover { background: rgba(255,255,255,.2); opacity: 1; }
-    .body { flex: 1; display: flex; align-items: center; gap: 8px; padding: 10px 14px; }
-    .body .muted { color: var(--muted); font-size: 12px; flex: 1; }
-    .timer { height: 3px; background: var(--c); transition: width linear; }
+    html, body { background: transparent; overflow: hidden; }
+    /* A margem transparente dá espaço para a sombra do cartão. */
+    body { padding: 12px; }
+    .card {
+      --c: var(--accent);
+      position: relative; overflow: hidden;
+      background: #fff; border-radius: 16px;
+      box-shadow: 0 4px 18px rgba(10, 25, 50, .28), 0 0 0 1px rgba(10, 25, 50, .08);
+      animation: enter .22s ease-out;
+    }
+    [hidden] { display: none !important; }
+    @keyframes enter { from { transform: translateY(10px); opacity: 0; } }
+    .main { display: grid; grid-template-columns: 46px 1fr auto; gap: 0 12px; padding: 14px 10px 10px 14px; cursor: pointer; }
+    .main:hover .heading { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 2px; }
+    .ic { width: 46px; height: 46px; border-radius: 13px; display: grid; place-items: center; color: #fff; background: linear-gradient(135deg, var(--c), color-mix(in srgb, var(--c) 72%, #061633)); }
+    .tx { min-width: 0; }
+    .top { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+    .kicker { font-size: 11.5px; font-weight: 800; letter-spacing: .7px; text-transform: uppercase; color: color-mix(in srgb, var(--c) 78%, #000); }
+    .time { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+    .heading { margin: 2px 0 0; font-size: 16.5px; line-height: 1.25; font-weight: 700; color: var(--navy); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+    .detail { margin: 3px 0 0; font-size: 12.5px; line-height: 1.35; color: var(--muted); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+    .x { border: 0; background: transparent; color: var(--muted); width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; align-self: start; margin-top: -4px; }
+    .x:hover { background: var(--pill); color: var(--navy); }
+    .notes { display: flex; flex-direction: column; gap: 3px; padding: 8px 14px; margin: 0 14px; border-radius: 9px; background: #F4F7FB; font-size: 12.5px; color: var(--ink); }
+    .notes div { display: flex; align-items: center; gap: 7px; min-width: 0; }
+    .notes svg { color: var(--muted); }
+    .notes span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .foot { display: flex; align-items: center; gap: 6px; padding: 10px 14px 14px; }
+    .foot .label { font-size: 12px; font-weight: 600; color: var(--muted); }
+    .foot .grow { flex: 1; font-size: 11.5px; color: var(--muted); text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 4px; }
+    .timer { position: absolute; left: 0; bottom: 0; height: 3px; width: 100%; background: var(--c); transform-origin: left; animation: drain linear forwards; }
+    @keyframes drain { to { transform: scaleX(0); } }
+    .card:hover .timer { animation-play-state: paused; }
   </style>
 </head>
 <body>
-  <div class="head"><div class="ic" id="ic"></div><div class="tx"><strong id="title"></strong><small id="body"></small></div><button class="x" id="x" title="Fechar"></button></div>
-  <div class="body"><span class="muted" id="hint"></span><button class="btn small" id="s1"></button><button class="btn small" id="s2"></button><button class="btn small primary" id="ok">OK</button></div>
-  <div class="timer" id="timer" style="width:100%"></div>
+  <div class="card" id="card">
+    <div class="main" id="main" title="Abrir o Rotina Desktop">
+      <div class="ic" id="ic"></div>
+      <div class="tx">
+        <div class="top"><span class="kicker" id="kicker"></span><span class="time" id="time"></span></div>
+        <div class="heading" id="heading"></div>
+        <div class="detail" id="detail"></div>
+      </div>
+      <button class="x" id="x" title="Fechar"></button>
+    </div>
+    <div class="notes" id="notes"></div>
+    <div class="foot" id="foot"></div>
+    <i class="timer" id="timer"></i>
+  </div>
   <script src="../shared/engine.js"></script>
   <script src="common.js"></script>
   <script src="popup.js"></script>

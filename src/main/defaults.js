@@ -109,7 +109,6 @@ function createDefaultConfig() {
         volume: 0.6,
         advanceEnabled: true,
         advanceMinutes: 5,
-        windowsNotification: true,
         popup: true,
         popupSeconds: 30,
         snoozeMinutes: 5
